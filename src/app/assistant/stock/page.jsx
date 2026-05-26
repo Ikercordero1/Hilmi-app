@@ -1,6 +1,6 @@
 //En esta página se muestra el inventario desde la perspectiva del asistente, utilizando el componente StockManager 
 // para gestionar y visualizar los productos disponibles.
-import StockManager from "/../components/shared/stock";
+import Stock from "../../components/StockManager";
 
 export default function StockAssistantPage() {
   return (
@@ -9,7 +9,7 @@ export default function StockAssistantPage() {
         Inventario (Vista de Asistente)
       </h1>
 
-      <StockManager />
+      <Stock />
     </div>
   );
 }

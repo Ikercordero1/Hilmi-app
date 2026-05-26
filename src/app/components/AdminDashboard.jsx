@@ -292,7 +292,7 @@ export default function AdminDashboard() {
               icon={Calendar}
               label="Citas de hoy"
               value={stats.todayAppts}
-              color="teal"
+              color="cyan"
             />
             <StatCard
               icon={Bell}

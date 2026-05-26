@@ -110,7 +110,7 @@ export default function AssistantHome() {
           icon={<Calendar className="w-10 h-10 " />}
           label="Citas hoy"
           value={stats.todayAppts}
-          color="teal"
+          color="cyan"
         />
         <StatCard
           icon={<Bell className="w-10 h-10" />}
@@ -197,6 +197,7 @@ function StatCard({ icon, label, value, color, onClick, clickable }) {
     cyan: "bg-cyan-50 border-cyan-100 text-cyan-700",
     gray: "bg-gray-50 border-gray-100 text-gray-500",
     alert: "bg-red-500 border-red-600 text-white",
+    
   };
 
   return (

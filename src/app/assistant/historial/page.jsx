@@ -1,6 +1,6 @@
 //Historial médico  de asistente, practicamente conserva las mismas carcateristicas que el diseño de administradores
 //ya que el componente esta hecho para ambos roles, solo se le cambia el titulo y el rol que se le asigna al componente para mostrar la informacion correspondiente a cada rol
-import MedicalHistory from "../../components/shared/MedicalHistory";
+import MedicalHistory from "../../components/MedicalHistory";
 
 export default function MedicalHistoryAssistant() {
   return (
