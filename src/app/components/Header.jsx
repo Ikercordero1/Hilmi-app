@@ -110,10 +110,12 @@ export default function Header() {
                 Iniciar sesión
               </Link>
 
-              <Link href="/register">
-                <button className="w-full border-2 border-teal-500 text-teal-400 py-3 rounded-full font-bold">
-                  Registrarse
-                </button>
+              <Link
+                href="/register"
+                onClick={() => setIsOpen(false)}
+                className="w-full border-2 text-center border-teal-500 text-teal-400 py-3 rounded-full font-bold"
+              >
+                Registrarse
               </Link>
             </div>
           </motion.div>

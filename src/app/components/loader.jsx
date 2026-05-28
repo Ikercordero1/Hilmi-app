@@ -47,7 +47,7 @@ export default function Loader({ isLoading }) {
 
   return (
     <div
-      className={`fixed inset-0 w-screen h-screen bg-cyan-800 flex flex-col justify-center items-center z-[9999] transition-opacity duration-500 ease-in-out ${
+      className={`fixed inset-0 w-screen h-lvh bg-cyan-800 flex flex-col justify-center items-center z-[9999] transition-opacity duration-500 ease-in-out ${
         fade ? "opacity-0" : "opacity-100"
       }`}
     >
