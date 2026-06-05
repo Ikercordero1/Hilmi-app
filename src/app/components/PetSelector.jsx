@@ -1,3 +1,6 @@
+//Selector de mascotas en el formulario de consulta. Permite buscar, seleccionar,
+//  crear, editar y eliminar mascotas.
+
 "use client";
 
 import { useState, useEffect, useRef } from "react";

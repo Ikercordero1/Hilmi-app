@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import db from "../../../lib/db";
 
-// GET /api/pets
+// GET
 // Devuelve todas las mascotas con datos del dueño
 export async function GET() {
   try {
@@ -35,7 +35,7 @@ export async function GET() {
   }
 }
 
-// POST /api/pets
+// POST 
 export async function POST(request) {
   try {
     const body = await request.json();

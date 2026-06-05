@@ -1,14 +1,10 @@
-"use client";
-
-import { useState, useEffect, useRef } from "react";
-
 // SuppliesEditor
 // Componente dropdown que carga insumos del inventario en tiempo real.
 // Permite seleccionar múltiples insumos con su cantidad y valida vs. stock disponible.
-// Props:
-//   value: [{ inventory_id, name, quantity_used, unit, stock, category }]
-//   onChange: (updatedList) => void
-//   disabled: boolean (opcional)
+
+"use client";
+
+import { useState, useEffect, useRef } from "react";
 
 export default function SuppliesEditor({
   value = [],
@@ -426,7 +422,7 @@ export default function SuppliesEditor({
   );
 }
 
-// Helper: ícono por categoría
+// Helper -  ícono por categoría
 function getCategoryIcon(category) {
   const map = {
     medicamento: "💊",

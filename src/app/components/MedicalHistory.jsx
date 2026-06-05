@@ -1,3 +1,5 @@
+//En este componente se logra apreciar los registros clínicos  existentes ofreciendo mayores
+//  datos sobre las mascotas atendidas e infiriendo directamente en el stock
 "use client";
 
 import { useState, useEffect } from "react";
@@ -108,12 +110,12 @@ export default function MedicalHistory() {
   };
 
   const filtered = records.filter((r) => {
-    // Si no hay búsqueda y están todas las especies, mostramos todo
+    // La busqueda muestra todo si no hay una mascota registrada escrita en el searchbard
     if (!search && filterSpecies === "all") return true;
 
     const term = search.toLowerCase();
 
-    // Convertimos la búsqueda a texto limpio (solo letras y números, sin espacios ni símbolos)
+    // Se convierte la búsqueda a texto limpio (solo letras y números, sin espacios ni símbolos)
     // Esto nos sirve específicamente para comparar cédulas y teléfonos
     const cleanTerm = term.replace(/[^a-z0-9]/g, "");
 
@@ -126,7 +128,7 @@ export default function MedicalHistory() {
       !search ||
       safeString(r.pet_name).includes(term) ||
       safeString(r.owner_name).includes(term) ||
-      // Usamos cleanString para que "V - 30.849.008" se convierta en "v30849008" y coincida siempre
+      // Usamos cleanString para que "V - 30.849.008" se convierta en "v30849008" y coincida siempre algo importante al transcribir
       cleanString(r.owner_cedula).includes(cleanTerm) ||
       cleanString(r.owner_phone).includes(cleanTerm) ||
       safeString(r.species).includes(term) ||
@@ -232,10 +234,9 @@ export default function MedicalHistory() {
         </div>
       )}
 
-      {/* ── MODAL: Nuevo Registro (Rediseñado con Grid) ── */}
+      {/* ── MODAL: Nuevo Registro  ── */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/40 backdrop-blur-sm">
-          {/* Aumenté max-w-2xl a max-w-4xl para permitir un diseño de dos columnas más ancho y menos alto */}
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-teal-700 to-cyan-800">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -280,7 +281,6 @@ export default function MedicalHistory() {
                   </div>
                 )}
 
-                {/* Formulario en Grid de 2 columnas para reducir altura vertical */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
                   {/* Selector de mascota (Ocupa ambas columnas) */}
                   <div className="md:col-span-2">
@@ -655,7 +655,7 @@ function EmptyState({ onNew }) {
   );
 }
 
-// ── UI Helpers & Icons ─────────────────────────────────────────────
+// ── UI Helpers  ─────────────────────────────────────────────
 
 const inputClass = `w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800
                     focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white transition-colors`;
