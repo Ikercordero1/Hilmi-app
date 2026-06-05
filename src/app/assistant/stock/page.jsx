@@ -5,7 +5,7 @@ import Stock from "../../components/StockManager";
 export default function StockAssistantPage() {
   return (
     <div className="w-full">
-      <h1 className="text-2xl font-bold mb-4">
+      <h1 className="text-2xl font-bold mb-4 text-teal-800 ">
         Inventario (Vista de Asistente)
       </h1>
 

@@ -1,35 +1,44 @@
-//Esta API maneja las operaciones relacionadas con las mascotas, como buscar por nombre, dueño o cédula, 
-// y crear nuevas fichas de mascotas. Se conecta a la base de datos MySQL para realizar estas operaciones.
 import { NextResponse } from "next/server";
 import db from "../../../lib/db";
 
-// GET — Buscar mascotas (por nombre, dueño o cédula)
-export async function GET(request) {
+// GET /api/pets
+// Devuelve todas las mascotas con datos del dueño
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search") ?? "";
-
     const [rows] = await db.query(
-      `SELECT * FROM pets
-WHERE pet_name LIKE ?
-OR owner_name LIKE ?
-OR owner_cedula LIKE ?
-ORDER BY created_at DESC`,
-      [`%${search}%`, `%${search}%`, `%${search}%`],
+      `SELECT
+        id,
+        pet_name,
+        species,
+        breed,
+        age,
+        owner_name,
+        owner_cedula,
+        owner_phone,
+        notes,
+        created_at
+       FROM pets
+       ORDER BY pet_name ASC`,
     );
-    return NextResponse.json(rows);
+
+    return NextResponse.json({ success: true, data: rows });
   } catch (error) {
-    console.error(error);
+    console.error("[GET /api/pets]", error);
     return NextResponse.json(
-      { message: "Error al obtener mascotas" },
+      {
+        success: false,
+        message: "Error al obtener mascotas",
+        error: error.message,
+      },
       { status: 500 },
     );
   }
 }
 
-// POST — Crear ficha de mascota
+// POST /api/pets
 export async function POST(request) {
   try {
+    const body = await request.json();
     const {
       owner_name,
       owner_cedula,
@@ -39,53 +48,46 @@ export async function POST(request) {
       breed,
       age,
       notes,
-    } = await request.json();
+    } = body;
 
     if (!owner_name || !owner_cedula || !pet_name || !species) {
       return NextResponse.json(
-        { message: "Faltan datos obligatorios" },
-        { status: 400 },
-      );
-    }
-
-    // Verificar duplicado
-    const [existing] = await db.query(
-      "SELECT id FROM pets WHERE owner_cedula = ? AND pet_name = ?",
-      [owner_cedula, pet_name],
-    );
-    if (existing.length > 0) {
-      return NextResponse.json(
         {
-          message: "Ya existe una mascota con ese nombre para esa cédula",
-          id: existing[0].id,
+          success: false,
+          message:
+            "Faltan campos obligatorios: owner_name, owner_cedula, pet_name, species",
         },
-        { status: 409 },
+        { status: 400 },
       );
     }
 
     const [result] = await db.query(
       `INSERT INTO pets (owner_name, owner_cedula, owner_phone, pet_name, species, breed, age, notes)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         owner_name,
         owner_cedula,
-        owner_phone,
+        owner_phone || null,
         pet_name,
         species,
-        breed,
-        age,
-        notes,
+        breed || null,
+        age || null,
+        notes || null,
       ],
     );
 
     return NextResponse.json(
-      { id: result.insertId, message: "Mascota registrada" },
+      { success: true, message: "Mascota registrada", id: result.insertId },
       { status: 201 },
     );
   } catch (error) {
-    console.error(error);
+    console.error("[POST /api/pets]", error);
     return NextResponse.json(
-      { message: "Error al registrar mascota" },
+      {
+        success: false,
+        message: "Error al registrar mascota",
+        error: error.message,
+      },
       { status: 500 },
     );
   }

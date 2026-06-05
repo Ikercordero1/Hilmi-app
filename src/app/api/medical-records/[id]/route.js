@@ -1,103 +1,150 @@
-//Endpoint para obtener, actualizar o eliminar un registro médico específico por su ID
 import { NextResponse } from "next/server";
 import db from "../../../../lib/db";
 
+// GET /api/medical-records/[id]
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
 
-    const [records] = await db.query(
-      "SELECT * FROM medical_records WHERE id = ?",
+    const [rows] = await db.query(
+      `SELECT
+mr.id,
+mr.visit_date,
+mr.diagnosis,
+mr.treatment,
+mr.notes,
+mr.vet_name,
+mr.created_at,
+
+p.id AS pet_id,
+p.pet_name,
+p.species,
+p.breed,
+p.age,
+p.owner_name,
+p.owner_cedula,
+p.owner_phone
+
+FROM medical_records mr
+LEFT JOIN pets p ON mr.pet_id = p.id
+WHERE mr.id = ?`,
       [id],
     );
-    if (records.length === 0) {
+
+    if (rows.length === 0) {
       return NextResponse.json(
-        { message: "Registro no encontrado" },
+        { success: false, message: "Registro no encontrado" },
         { status: 404 },
       );
     }
 
     const [supplies] = await db.query(
-      "SELECT * FROM medical_supplies WHERE record_id = ?",
+      `SELECT
+rs.inventory_id,
+rs.quantity_used,
+i.name AS supply_name,
+i.unit,
+i.category,
+i.quantity AS current_stock
+FROM record_supplies rs
+LEFT JOIN inventory i ON rs.inventory_id = i.id
+WHERE rs.record_id = ?`,
       [id],
     );
 
-    return NextResponse.json({ record: records[0], supplies });
+    return NextResponse.json({
+      success: true,
+      data: { ...rows[0], supplies },
+    });
   } catch (error) {
-    console.error(error);
+    console.error("[GET /api/medical-records/[id]]", error);
     return NextResponse.json(
-      { message: "Error al obtener registro" },
+      {
+        success: false,
+        message: "Error al obtener registro",
+        error: error.message,
+      },
       { status: 500 },
     );
   }
 }
 
+// PUT /api/medical-records/[id]
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;
-    const { vet_name, visit_date, diagnosis, treatment, notes, supplies } =
-      await request.json();
+    const body = await request.json();
+    const { visit_date, diagnosis, treatment, notes, vet_name } = body;
 
-    if (!visit_date || !diagnosis) {
+    const [existing] = await db.query(
+      "SELECT id FROM medical_records WHERE id = ?",
+      [id],
+    );
+
+    if (existing.length === 0) {
       return NextResponse.json(
-        { message: "Faltan datos obligatorios" },
-        { status: 400 },
+        { success: false, message: "Registro no encontrado" },
+        { status: 404 },
       );
     }
 
     await db.query(
-      `UPDATE medical_records
-       SET vet_name=?, visit_date=?, diagnosis=?, treatment=?, notes=?
-       WHERE id=?`,
-      [
-        vet_name ?? null,
-        visit_date,
-        diagnosis,
-        treatment ?? null,
-        notes ?? null,
-        id,
-      ],
+      `UPDATE medical_records SET
+visit_date = COALESCE(?, visit_date),
+diagnosis = COALESCE(?, diagnosis),
+treatment = COALESCE(?, treatment),
+notes = COALESCE(?, notes),
+vet_name = COALESCE(?, vet_name)
+WHERE id = ?`,
+      [visit_date, diagnosis, treatment, notes, vet_name, id],
     );
 
-    // Reemplazar insumos completamente
-    if (Array.isArray(supplies)) {
-      await db.query("DELETE FROM medical_supplies WHERE record_id = ?", [id]);
-
-      const validSupplies = supplies.filter((s) => s.supply_name?.trim());
-      if (validSupplies.length > 0) {
-        const supplyValues = validSupplies.map((s) => [
-          id,
-          s.supply_name.trim(),
-          parseFloat(s.quantity) || 1,
-          s.unit ?? "",
-        ]);
-        await db.query(
-          "INSERT INTO medical_supplies (record_id, supply_name, quantity, unit) VALUES ?",
-          [supplyValues],
-        );
-      }
-    }
-
-    return NextResponse.json({ message: "Registro actualizado" });
+    return NextResponse.json({
+      success: true,
+      message: "Registro actualizado",
+    });
   } catch (error) {
-    console.error(error);
+    console.error("[PUT /api/medical-records/[id]]", error);
     return NextResponse.json(
-      { message: "Error al actualizar registro" },
+      {
+        success: false,
+        message: "Error al actualizar registro",
+        error: error.message,
+      },
       { status: 500 },
     );
   }
 }
 
+// DELETE /api/medical-records/[id]
 export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
-    // Los insumos se eliminan por CASCADE
+
+    const [existing] = await db.query(
+      "SELECT id FROM medical_records WHERE id = ?",
+      [id],
+    );
+
+    if (existing.length === 0) {
+      return NextResponse.json(
+        { success: false, message: "Registro no encontrado" },
+        { status: 404 },
+      );
+    }
+
+    await db.query("DELETE FROM record_supplies WHERE record_id = ?", [id]);
     await db.query("DELETE FROM medical_records WHERE id = ?", [id]);
-    return NextResponse.json({ message: "Registro eliminado" });
+
+    return NextResponse.json({ success: true, message: "Registro eliminado" });
   } catch (error) {
-    console.error(error);
+    console.error("[DELETE /api/medical-records/[id]]", error);
     return NextResponse.json(
-      { message: "Error al eliminar registro" },
+      {
+        success: false,
+        message: "Error al eliminar registro",
+        error: error.message,
+      },
       { status: 500 },
     );
   }

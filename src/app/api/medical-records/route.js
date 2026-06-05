@@ -1,41 +1,85 @@
-//En este archivo se manejan las rutas para obtener y crear registros médicos. La función GET permite filtrar por ID de mascota,
-//  mientras que la función POST valida los datos recibidos y maneja la inserción tanto del registro 
-// médico como de los insumos relacionados.
 import { NextResponse } from "next/server";
 import db from "../../../lib/db";
 
-export async function GET(request) {
+// GET /api/medical-records
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const petId = searchParams.get("pet_id");
+    const [rows] = await db.query(
+      `SELECT
+mr.id,
+mr.visit_date,
+mr.diagnosis,
+mr.treatment,
+mr.notes,
+mr.vet_name,
+mr.created_at,
+p.id AS pet_id,
+p.pet_name,
+p.species,
+p.breed,
+p.age,
+p.owner_name,
+p.owner_cedula,
+p.owner_phone
 
-    let query = `
-      SELECT r.*, p.pet_name, p.owner_name
-      FROM medical_records r
-      JOIN pets p ON r.pet_id = p.id
-    `;
-    const params = [];
+FROM medical_records mr
+LEFT JOIN pets p ON mr.pet_id = p.id
+ORDER BY mr.visit_date DESC, mr.created_at DESC`,
+    );
 
-    if (petId) {
-      query += " WHERE r.pet_id = ?";
-      params.push(petId);
+    const recordIds = rows.map((r) => r.id);
+    let suppliesMap = {};
+
+    if (recordIds.length > 0) {
+      const [supplies] = await db.query(
+        `SELECT
+rs.record_id,
+rs.inventory_id,
+rs.quantity_used,
+i.name AS supply_name,
+i.unit,
+i.category
+FROM record_supplies rs
+LEFT JOIN inventory i ON rs.inventory_id = i.id
+WHERE rs.record_id IN (${recordIds.map(() => "?").join(",")})`,
+        recordIds,
+      );
+
+      supplies.forEach((s) => {
+        if (!suppliesMap[s.record_id]) suppliesMap[s.record_id] = [];
+        suppliesMap[s.record_id].push({
+          inventory_id: s.inventory_id,
+          name: s.supply_name,
+          quantity_used: s.quantity_used,
+          unit: s.unit,
+          category: s.category,
+        });
+      });
     }
 
-    query += " ORDER BY r.visit_date DESC";
+    const data = rows.map((r) => ({
+      ...r,
+      supplies: suppliesMap[r.id] || [],
+    }));
 
-    const [rows] = await db.query(query, params);
-    return NextResponse.json(rows);
+    return NextResponse.json({ success: true, data });
   } catch (error) {
-    console.error(error);
+    console.error("[GET /api/medical-records]", error);
     return NextResponse.json(
-      { message: "Error al obtener registros" },
+      {
+        success: false,
+        message: "Error al obtener registros",
+        error: error.message,
+      },
       { status: 500 },
     );
   }
 }
 
+// POST /api/medical-records
 export async function POST(request) {
   try {
+    const body = await request.json();
     const {
       pet_id,
       vet_name,
@@ -43,59 +87,100 @@ export async function POST(request) {
       diagnosis,
       treatment,
       notes,
-      supplies,
-    } = await request.json();
+      supplies = [],
+    } = body;
 
     if (!pet_id || !visit_date || !diagnosis) {
       return NextResponse.json(
-        { message: "Faltan datos obligatorios" },
+        {
+          success: false,
+          message: "Faltan campos obligatorios: pet_id, visit_date, diagnosis",
+        },
         { status: 400 },
       );
     }
 
-    // Crear registro médico
-    const [result] = await db.query(
+    const [recordResult] = await db.query(
       `INSERT INTO medical_records (pet_id, vet_name, visit_date, diagnosis, treatment, notes)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+VALUES (?, ?, ?, ?, ?, ?)`,
       [
         pet_id,
-        vet_name ?? null,
+        vet_name || null,
         visit_date,
         diagnosis,
-        treatment ?? null,
-        notes ?? null,
+        treatment || null,
+        notes || null,
       ],
     );
 
-    const recordId = result.insertId;
+    const record_id = recordResult.insertId;
+    const stockWarnings = [];
 
-    // Insertar insumos si los hay
-    if (Array.isArray(supplies) && supplies.length > 0) {
-      const validSupplies = supplies.filter((s) => s.supply_name?.trim());
+    for (const item of supplies) {
+      const { inventory_id, quantity_used } = item;
+      if (!inventory_id || !quantity_used || quantity_used <= 0) continue;
 
-      if (validSupplies.length > 0) {
-        const supplyValues = validSupplies.map((s) => [
-          recordId,
-          s.supply_name.trim(),
-          parseFloat(s.quantity) || 1,
-          s.unit ?? "",
-        ]);
+      const [invRows] = await db.query(
+        "SELECT quantity, name FROM inventory WHERE id = ?",
+        [inventory_id],
+      );
 
+      if (invRows.length === 0) {
+        stockWarnings.push({
+          inventory_id,
+          message: `Insumo ID ${inventory_id} no encontrado, se omitió.`,
+        });
+        continue;
+      }
+
+      const currentStock = invRows[0].quantity;
+      const supplyName = invRows[0].name;
+      const toDeduct = Math.min(currentStock, quantity_used);
+
+      if (quantity_used > currentStock) {
+        stockWarnings.push({
+          inventory_id,
+          name: supplyName,
+          requested: quantity_used,
+          available: currentStock,
+          deducted: toDeduct,
+          message: `Stock insuficiente para "${supplyName}". Se usaron ${toDeduct} de ${currentStock} disponibles.`,
+        });
+      }
+
+      await db.query(
+        `INSERT INTO record_supplies (record_id, inventory_id, quantity_used) VALUES (?, ?, ?)`,
+        [record_id, inventory_id, toDeduct],
+      );
+
+      if (toDeduct > 0) {
         await db.query(
-          "INSERT INTO medical_supplies (record_id, supply_name, quantity, unit) VALUES ?",
-          [supplyValues],
+          "UPDATE inventory SET quantity = quantity - ? WHERE id = ?",
+          [toDeduct, inventory_id],
         );
       }
     }
 
     return NextResponse.json(
-      { id: recordId, message: "Registro creado" },
+      {
+        success: true,
+        message:
+          stockWarnings.length > 0
+            ? "Registro creado con advertencias de stock"
+            : "Registro creado correctamente",
+        record_id,
+        stockWarnings,
+      },
       { status: 201 },
     );
   } catch (error) {
-    console.error(error);
+    console.error("[POST /api/medical-records]", error);
     return NextResponse.json(
-      { message: "Error al crear registro" },
+      {
+        success: false,
+        message: "Error al crear registro",
+        error: error.message,
+      },
       { status: 500 },
     );
   }

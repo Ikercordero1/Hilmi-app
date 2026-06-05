@@ -1,677 +1,844 @@
-//Historial médico de mascotas: búsqueda, creación y edición de fichas, gestión de registros médicos
-//  con insumos asociados, interfaz intuitiva y moderna para veterinarios.
 "use client";
+
 import { useState, useEffect } from "react";
-import {
-  Dog, Cat, PawPrint, User, IdCard, Phone, AlertCircle,
-  Pencil, Trash2, Calendar, Stethoscope, Pill, X, Plus, Eye, Beaker,
-} from "lucide-react";
+import SuppliesEditor from "./SuppliesEditor";
+import PetSelector from "./PetSelector";
 
-const fmtDate = (d) =>
-  d ? new Date(d).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" }) : "—";
+const EMPTY_FORM = {
+  pet: null,
+  vet_name: "",
+  visit_date: new Date().toISOString().split("T")[0],
+  diagnosis: "",
+  treatment: "",
+  notes: "",
+  supplies: [],
+};
 
-// ── Modal Overlay ──────────────────────────────────────────────
-function ModalOverlay({ children, onClose, wide = false }) {
-  useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-    >
-      <div className="absolute inset-0" onClick={onClose} />
-      <div
-        className={`relative z-10 bg-white rounded-3xl shadow-2xl border border-gray-200 w-full max-h-[90vh] overflow-y-auto ${wide ? "max-w-2xl" : "max-w-lg"}`}
-        style={{ scrollbarWidth: "thin" }}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition z-20"
-        >
-          <X className="w-4 h-4" strokeWidth={2.5} />
-        </button>
-        <div className="p-8">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-export default function MedicalHistoryPage() {
-  const [view, setView] = useState("search");
-  const [search, setSearch] = useState("");
-  const [pets, setPets] = useState([]);
-  const [activePet, setActivePet] = useState(null);
+export default function MedicalHistory() {
   const [records, setRecords] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [modal, setModal] = useState(null);
-  const [activeRecord, setActiveRecord] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [viewModal, setViewModal] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [stockWarnings, setStockWarnings] = useState([]);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filterSpecies, setFilterSpecies] = useState("all");
 
-  const [petForm, setPetForm] = useState({
-    owner_name: "", owner_cedula: "", owner_phone: "",
-    pet_name: "", species: "", breed: "", age: "", notes: "",
-  });
-
-  const [recordForm, setRecordForm] = useState({
-    vet_name: "", visit_date: new Date().toISOString().split("T")[0],
-    diagnosis: "", treatment: "", notes: "",
-  });
-  const [supplies, setSupplies] = useState([]);
-
-  useEffect(() => {
-    if (search.trim().length < 2) { setPets([]); return; }
-    const timeout = setTimeout(() => searchPets(), 400);
-    return () => clearTimeout(timeout);
-  }, [search]);
-
-  const searchPets = async () => {
-    setSearching(true);
-    try {
-      const res = await fetch(`/api/pets?search=${encodeURIComponent(search)}`, { cache: "no-store" });
-      const data = await res.json();
-      if (Array.isArray(data)) setPets(data);
-    } catch (e) { console.error(e); }
-    finally { setSearching(false); }
-  };
-
-  const loadPet = async (id) => {
+  const fetchRecords = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/pets/${id}`, { cache: "no-store" });
-      const data = await res.json();
-      setActivePet(data.pet);
-      setRecords(data.records ?? []);
-      setView("pet");
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+      const res = await fetch("/api/medical-records");
+      const json = await res.json();
+      if (json.success) setRecords(json.data);
+    } catch (err) {
+      console.error("Error al cargar registros:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecords();
+  }, []);
+
+  const handleChange = (field, value) =>
+    setForm((prev) => ({ ...prev, [field]: value }));
+
+  const handleSave = async () => {
+    setError(null);
+    setStockWarnings([]);
+
+    if (!form.pet) {
+      setError("Selecciona una mascota.");
+      return;
+    }
+    if (!form.visit_date || !form.diagnosis) {
+      setError("Completa los campos obligatorios: Fecha y Diagnóstico.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        pet_id: form.pet.id,
+        vet_name: form.vet_name || null,
+        visit_date: form.visit_date,
+        diagnosis: form.diagnosis,
+        treatment: form.treatment || null,
+        notes: form.notes || null,
+        supplies: form.supplies.map((s) => ({
+          inventory_id: s.inventory_id,
+          quantity_used: s.quantity_used,
+        })),
+      };
+
+      const res = await fetch("/api/medical-records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+
+      if (!json.success) {
+        setError(json.message || "Error al guardar");
+        return;
+      }
+
+      if (json.stockWarnings?.length > 0) {
+        setStockWarnings(json.stockWarnings);
+      } else {
+        closeModal();
+      }
+
+      await fetchRecords();
+    } catch (err) {
+      setError("Error de conexión al guardar el registro.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const closeModal = () => {
-    setModal(null); setError(""); setActiveRecord(null); setSupplies([]);
-    setRecordForm({ vet_name: "", visit_date: new Date().toISOString().split("T")[0], diagnosis: "", treatment: "", notes: "" });
+    setModalOpen(false);
+    setForm(EMPTY_FORM);
+    setError(null);
+    setStockWarnings([]);
   };
 
-  const emptyPetForm = { owner_name: "", owner_cedula: "", owner_phone: "", pet_name: "", species: "", breed: "", age: "", notes: "" };
+  const filtered = records.filter((r) => {
+    // Si no hay búsqueda y están todas las especies, mostramos todo
+    if (!search && filterSpecies === "all") return true;
 
-  const createPet = async () => {
-    setLoading(true); setError("");
-    try {
-      const res = await fetch("/api/pets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(petForm) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.message); return; }
-      await loadPet(data.id);
-      setPetForm(emptyPetForm);
-      setView("pet");
-    } catch { setError("Error de conexión"); }
-    finally { setLoading(false); }
-  };
+    const term = search.toLowerCase();
 
-  const updatePet = async () => {
-    setLoading(true); setError("");
-    try {
-      const res = await fetch(`/api/pets/${activePet.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(petForm) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.message); return; }
-      closeModal(); loadPet(activePet.id);
-    } catch { setError("Error de conexión"); }
-    finally { setLoading(false); }
-  };
+    // Convertimos la búsqueda a texto limpio (solo letras y números, sin espacios ni símbolos)
+    // Esto nos sirve específicamente para comparar cédulas y teléfonos
+    const cleanTerm = term.replace(/[^a-z0-9]/g, "");
 
-  const deletePet = async () => {
-    setLoading(true);
-    try {
-      await fetch(`/api/pets/${activePet.id}`, { method: "DELETE" });
-      setView("search"); setActivePet(null); setRecords([]); setSearch(""); setPets([]);
-      closeModal();
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  };
+    // Función salvavidas normal
+    const safeString = (val) => (val ? String(val).toLowerCase() : "");
+    // Función para limpiar de símbolos y espacios la data de la DB
+    const cleanString = (val) => safeString(val).replace(/[^a-z0-9]/g, "");
 
-  const createRecord = async () => {
-    setLoading(true); setError("");
-    try {
-      const res = await fetch("/api/medical-records", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...recordForm, pet_id: activePet.id, supplies }) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.message); return; }
-      closeModal(); loadPet(activePet.id);
-    } catch { setError("Error de conexión"); }
-    finally { setLoading(false); }
-  };
+    const matchesSearch =
+      !search ||
+      safeString(r.pet_name).includes(term) ||
+      safeString(r.owner_name).includes(term) ||
+      // Usamos cleanString para que "V - 30.849.008" se convierta en "v30849008" y coincida siempre
+      cleanString(r.owner_cedula).includes(cleanTerm) ||
+      cleanString(r.owner_phone).includes(cleanTerm) ||
+      safeString(r.species).includes(term) ||
+      safeString(r.breed).includes(term) ||
+      safeString(r.diagnosis).includes(term) ||
+      safeString(r.treatment).includes(term) ||
+      safeString(r.vet_name).includes(term);
 
-  const updateRecord = async () => {
-    setLoading(true); setError("");
-    try {
-      const res = await fetch(`/api/medical-records/${activeRecord.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...recordForm, supplies }) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.message); return; }
-      closeModal(); loadPet(activePet.id);
-    } catch { setError("Error de conexión"); }
-    finally { setLoading(false); }
-  };
+    const matchesSpecies =
+      filterSpecies === "all" || safeString(r.species) === filterSpecies;
 
-  const deleteRecord = async () => {
-    setLoading(true);
-    try {
-      await fetch(`/api/medical-records/${activeRecord.id}`, { method: "DELETE" });
-      setRecords((prev) => prev.filter((r) => r.id !== activeRecord.id));
-      closeModal();
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  };
+    return matchesSearch && matchesSpecies;
+  });
 
-  const addSupply = () => setSupplies((prev) => [...prev, { supply_name: "", quantity: 1, unit: "" }]);
-  const updateSupply = (i, field, value) => setSupplies((prev) => prev.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)));
-  const removeSupply = (i) => setSupplies((prev) => prev.filter((_, idx) => idx !== i));
+  const species = [...new Set(records.map((r) => r.species).filter(Boolean))];
 
-  const openEditPet = () => {
-    if (activePet) setPetForm({ ...activePet });
-    setError("");
-    setModal("editPet");
-  };
+  return (
+    <div className="space-y-5">
+      {/* ── Toolbar ── */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex flex-col sm:flex-row gap-2 flex-1">
+          <div className="relative flex-1">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"
+              />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por mascota, dueño, diagnóstico..."
+              className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white"
+            />
+          </div>
+          <select
+            value={filterSpecies}
+            onChange={(e) => setFilterSpecies(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700
+                       focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white"
+          >
+            <option value="all">Todas las especies</option>
+            {species.map((s) => (
+              <option key={s} value={s.toLowerCase()}>
+                {capitalize(s)}
+              </option>
+            ))}
+          </select>
+        </div>
 
-  const openNewRecord = () => {
-    setRecordForm({ vet_name: "", visit_date: new Date().toISOString().split("T")[0], diagnosis: "", treatment: "", notes: "" });
-    setSupplies([]); setError(""); setModal("newRecord");
-  };
-
-  const openEditRecord = (rec) => {
-    setActiveRecord(rec);
-    setRecordForm({ vet_name: rec.vet_name ?? "", visit_date: rec.visit_date ?? "", diagnosis: rec.diagnosis ?? "", treatment: rec.treatment ?? "", notes: rec.notes ?? "" });
-    setSupplies(rec.supplies ?? []); setError(""); setModal("editRecord");
-  };
-
-  const openViewRecord = (rec) => { setActiveRecord(rec); setModal("viewRecord"); };
-
-  const SuppliesEditor = () => (
-    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-5">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-bold text-teal-700 uppercase tracking-widest">Insumos utilizados</p>
-        <button onClick={addSupply} className="flex items-center gap-1 text-xs text-teal-700 font-semibold bg-white border border-teal-200 hover:bg-teal-50 rounded-lg px-2.5 py-1 transition">
-          <Plus className="w-3 h-3" strokeWidth={2.5} /> Añadir
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-700
+                     text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm
+                     hover:from-teal-700 hover:to-cyan-800 transition-all active:scale-95"
+        >
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 4v16m8-8H4"
+            />
+          </svg>
+          Nuevo registro
         </button>
       </div>
-      {supplies.length === 0 ? (
-        <div className="text-center py-4 border border-dashed border-gray-300 rounded-xl text-xs text-gray-400 bg-white">
-          Sin insumos — toca "Añadir" para registrar materiales usados
-        </div>
+
+      <p className="text-xs text-slate-500">
+        {loading
+          ? "Cargando..."
+          : `${filtered.length} registro${filtered.length !== 1 ? "s" : ""} encontrado${filtered.length !== 1 ? "s" : ""}`}
+      </p>
+
+      {/* ── Lista ── */}
+      {loading ? (
+        <LoadingSkeleton />
+      ) : filtered.length === 0 ? (
+        <EmptyState onNew={() => setModalOpen(true)} />
       ) : (
-        <div className="space-y-2">
-          <div className="grid grid-cols-[1fr_70px_60px_32px] gap-2 px-1">
-            <span className="text-xs text-gray-400">Nombre</span>
-            <span className="text-xs text-gray-400 text-center">Cant.</span>
-            <span className="text-xs text-gray-400 text-center">Unidad</span>
-            <span />
-          </div>
-          {supplies.map((s, i) => (
-            <div key={i} className="grid grid-cols-[1fr_70px_60px_32px] gap-2 items-center">
-              <input type="text" value={s.supply_name} onChange={(e) => updateSupply(i, "supply_name", e.target.value)} placeholder="Ej: Amoxicilina" className="w-full bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500" />
-              <input type="number" value={s.quantity} onChange={(e) => updateSupply(i, "quantity", Number(e.target.value))} min="0" className="w-full bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-teal-500" />
-              <input type="text" value={s.unit} onChange={(e) => updateSupply(i, "unit", e.target.value)} placeholder="ml" className="w-full bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-teal-500" />
-              <button onClick={() => removeSupply(i)} className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-500 flex items-center justify-center transition flex-shrink-0">
-                <X className="w-3.5 h-3.5" strokeWidth={2.5} />
-              </button>
-            </div>
+        <div className="space-y-3">
+          {filtered.map((record) => (
+            <RecordCard
+              key={record.id}
+              record={record}
+              onView={() => setViewModal(record)}
+            />
           ))}
         </div>
       )}
-    </div>
-  );
 
-  return (
-    <>
-      <div className="min-h-screen flex bg-white w-full rounded-3xl relative overflow-hidden p-6 md:p-10 font-sans text-gray-800">
-        <div className="absolute top-[-5%] left-[-10%] w-96 h-96 bg-teal-50 rounded-full mix-blend-multiply blur-3xl opacity-70 pointer-events-none" />
-        <div className="absolute bottom-[-5%] right-[-10%] w-[30rem] h-[30rem] bg-sky-50 rounded-full mix-blend-multiply blur-3xl opacity-70 pointer-events-none" />
-
-        <div className="relative z-10 max-w-5xl mx-auto w-full">
-          {/* Header */}
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-teal-800 tracking-tight">Historial de Mascotas</h1>
-              <p className="text-sm text-gray-500 mt-1">Busca una mascota o registra una nueva</p>
-            </div>
-            <div className="flex gap-3">
-              {view === "pet" && (
-                <button onClick={() => setView("search")} className="bg-white/60 border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-xl px-5 py-2.5 text-sm font-medium transition shadow-sm">
-                  ← Volver
-                </button>
-              )}
+      {/* ── MODAL: Nuevo Registro (Rediseñado con Grid) ── */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/40 backdrop-blur-sm">
+          {/* Aumenté max-w-2xl a max-w-4xl para permitir un diseño de dos columnas más ancho y menos alto */}
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-teal-700 to-cyan-800">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <ClipboardIcon className="w-5 h-5 text-teal-200" />
+                Nuevo Registro Clínico
+              </h2>
               <button
-                onClick={() => { setPetForm(emptyPetForm); setError(""); setView("newPet"); }}
-                className="bg-teal-600 hover:bg-teal-700 border border-teal-500 text-white rounded-xl px-5 py-2.5 text-sm font-medium transition shadow-[0_4px_14px_0_rgba(13,148,136,0.39)]"
+                onClick={closeModal}
+                className="text-white/70 hover:text-white transition-colors"
               >
-                + Nueva mascota
+                <CloseIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-5">
+              <div className="space-y-6">
+                {/* Alertas */}
+                {error && (
+                  <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                    <AlertTriangleIcon className="w-5 h-5 text-red-500 flex-shrink-0" />
+                    <p className="text-sm text-red-700">{error}</p>
+                  </div>
+                )}
+
+                {stockWarnings.length > 0 && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 space-y-2">
+                    <p className="text-sm font-semibold text-amber-800 flex items-center gap-1.5">
+                      <AlertTriangleIcon className="w-4 h-4" />
+                      Registro guardado con advertencias de stock:
+                    </p>
+                    <ul className="list-disc list-inside text-xs text-amber-700 space-y-1">
+                      {stockWarnings.map((w, i) => (
+                        <li key={i}>{w.message}</li>
+                      ))}
+                    </ul>
+                    <button
+                      onClick={closeModal}
+                      className="mt-2 text-xs font-semibold text-amber-800 underline hover:text-amber-900"
+                    >
+                      Entendido, cerrar
+                    </button>
+                  </div>
+                )}
+
+                {/* Formulario en Grid de 2 columnas para reducir altura vertical */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+                  {/* Selector de mascota (Ocupa ambas columnas) */}
+                  <div className="md:col-span-2">
+                    <Section title="Paciente">
+                      <PetSelector
+                        value={form.pet}
+                        onChange={(pet) => handleChange("pet", pet)}
+                      />
+                    </Section>
+                  </div>
+
+                  {/* Consulta - Columna 1 */}
+                  <div className="space-y-5">
+                    <Section title="Datos de la Visita">
+                      <div>
+                        <label className={labelClass}>Fecha de visita *</label>
+                        <input
+                          type="date"
+                          value={form.visit_date}
+                          onChange={(e) =>
+                            handleChange("visit_date", e.target.value)
+                          }
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Veterinario</label>
+                        <input
+                          type="text"
+                          value={form.vet_name}
+                          onChange={(e) =>
+                            handleChange("vet_name", e.target.value)
+                          }
+                          placeholder="Nombre del veterinario tratante"
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Diagnóstico *</label>
+                        <textarea
+                          rows={3}
+                          value={form.diagnosis}
+                          onChange={(e) =>
+                            handleChange("diagnosis", e.target.value)
+                          }
+                          placeholder="Diagnóstico clínico detallado..."
+                          className={`${inputClass} resize-none`}
+                        />
+                      </div>
+                    </Section>
+                  </div>
+
+                  {/* Consulta - Columna 2 */}
+                  <div className="space-y-5">
+                    <Section title="Tratamiento y Notas">
+                      <div>
+                        <label className={labelClass}>Tratamiento</label>
+                        <textarea
+                          rows={3}
+                          value={form.treatment}
+                          onChange={(e) =>
+                            handleChange("treatment", e.target.value)
+                          }
+                          placeholder="Plan de tratamiento indicado..."
+                          className={`${inputClass} resize-none`}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Notas adicionales</label>
+                        <textarea
+                          rows={3}
+                          value={form.notes}
+                          onChange={(e) =>
+                            handleChange("notes", e.target.value)
+                          }
+                          placeholder="Observaciones, recomendaciones o próximos pasos..."
+                          className={`${inputClass} resize-none`}
+                        />
+                      </div>
+                    </Section>
+                  </div>
+
+                  {/* Insumos (Ocupa ambas columnas) */}
+                  <div className="md:col-span-2">
+                    <Section
+                      title="Insumos utilizados"
+                      subtitle="Se descontarán automáticamente del inventario al guardar el registro."
+                    >
+                      <SuppliesEditor
+                        value={form.supplies}
+                        onChange={(supplies) =>
+                          handleChange("supplies", supplies)
+                        }
+                      />
+                    </Section>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 flex-shrink-0">
+              <button
+                onClick={closeModal}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600
+                           hover:bg-slate-200 transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-700
+                           text-white text-sm font-semibold px-6 py-2 rounded-lg shadow-sm
+                           hover:from-teal-700 hover:to-cyan-800 transition-all
+                           disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+              >
+                {saving ? (
+                  <>
+                    <SpinnerIcon className="w-4 h-4 animate-spin text-white" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <SaveIcon className="w-4 h-4" />
+                    Guardar registro
+                  </>
+                )}
               </button>
             </div>
           </div>
-
-          {/* ── VISTA: Búsqueda ── */}
-          {view === "search" && (
-            <div className="max-w-2xl">
-              <div className="relative mb-6">
-                <input
-                  type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar por nombre de mascota, dueño o cédula..."
-                  className="w-full bg-white/70 border border-gray-200 rounded-2xl px-6 py-4 text-base text-gray-800 placeholder-gray-400 backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition shadow-sm pr-12"
-                />
-                {searching && <div className="absolute right-8 top-1/2 -translate-y-1/2 w-5 h-5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />}
-              </div>
-
-              {search.trim().length >= 2 && pets.length === 0 && !searching && (
-                <div className="text-center py-16 bg-white/60 backdrop-blur-md rounded-3xl border border-gray-200 shadow-sm">
-                  <p className="text-gray-500 text-sm mb-5">No se encontraron mascotas con ese criterio</p>
-                  <button onClick={() => { setPetForm(emptyPetForm); setView("newPet"); }} className="bg-teal-600 hover:bg-teal-700 text-white rounded-xl px-6 py-2.5 text-sm font-medium transition shadow-md">
-                    + Registrar nueva mascota
-                  </button>
-                </div>
-              )}
-
-              {pets.length > 0 && (
-                <div className="space-y-3">
-                  {pets.map((pet) => (
-                    <button key={pet.id} onClick={() => loadPet(pet.id)} className="w-full bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm p-5 flex items-center gap-5 hover:bg-gray-50 hover:border-teal-300 transition duration-300 text-left group">
-                      <div className="w-14 h-14 rounded-xl bg-teal-50 border border-teal-100 text-teal-600 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform shadow-inner">
-                        {pet.species?.toLowerCase().includes("perro") ? <Dog className="w-7 h-7" strokeWidth={2} /> : pet.species?.toLowerCase().includes("gato") ? <Cat className="w-7 h-7" strokeWidth={2} /> : <PawPrint className="w-7 h-7" strokeWidth={2} />}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-bold text-gray-900 text-lg">{pet.pet_name}</p>
-                        <p className="text-sm text-teal-600 mb-0.5 font-medium">{pet.species}{pet.breed ? ` · ${pet.breed}` : ""}</p>
-                        <p className="text-xs text-gray-500">👤 {pet.owner_name} <span className="mx-1 text-gray-300">|</span> 🪪 {pet.owner_cedula}</p>
-                      </div>
-                      <span className="ml-auto text-gray-300 text-3xl flex-shrink-0 group-hover:text-teal-500 transition-colors">›</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {search.trim().length === 0 && (
-                <div className="text-center py-24 text-gray-400">
-                  <p className="text-6xl mb-5 opacity-40">🔍</p>
-                  <p className="text-sm tracking-wide font-medium">Escribe al menos 2 caracteres para buscar</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── VISTA: Nueva mascota ── */}
-          {view === "newPet" && (
-            <div className="max-w-2xl bg-white/80 backdrop-blur-xl rounded-3xl border border-gray-200 shadow-xl p-8 lg:p-10">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">Nueva ficha de mascota</h2>
-              <p className="text-sm text-gray-400 mb-6">Completa los datos del dueño y de la mascota</p>
-
-              <SectionTitle>Datos del dueño</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                <MField label="Nombre completo *" value={petForm.owner_name} onChange={(v) => setPetForm((f) => ({ ...f, owner_name: v }))} placeholder="Ej: Juan Pérez" />
-                <MField label="Cédula *" value={petForm.owner_cedula} onChange={(v) => setPetForm((f) => ({ ...f, owner_cedula: v }))} placeholder="Ej: V-12345678" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                <MField label="Teléfono" value={petForm.owner_phone} onChange={(v) => setPetForm((f) => ({ ...f, owner_phone: v }))} placeholder="Ej: 0414-1234567" />
-              </div>
-
-              <SectionTitle>Datos de la mascota</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                <MField label="Nombre *" value={petForm.pet_name} onChange={(v) => setPetForm((f) => ({ ...f, pet_name: v }))} placeholder="Ej: Firulais" />
-                <MField label="Especie *" value={petForm.species} onChange={(v) => setPetForm((f) => ({ ...f, species: v }))} placeholder="Ej: Perro, Gato" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                <MField label="Raza" value={petForm.breed} onChange={(v) => setPetForm((f) => ({ ...f, breed: v }))} placeholder="Ej: Labrador" />
-                <MField label="Edad" value={petForm.age} onChange={(v) => setPetForm((f) => ({ ...f, age: v }))} placeholder="Ej: 3 años" />
-              </div>
-
-              <div className="mb-6">
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Notas adicionales</label>
-                <textarea
-                  value={petForm.notes} onChange={(e) => setPetForm((f) => ({ ...f, notes: e.target.value }))}
-                  placeholder="Alergias conocidas, condiciones previas..." rows={3}
-                  className="w-full bg-white/60 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none transition"
-                />
-              </div>
-
-              {error && <p className="text-red-600 text-sm mb-5 bg-red-50 p-3 rounded-xl border border-red-100">{error}</p>}
-
-              <div className="flex gap-3 mt-6 pt-6 border-t border-gray-100">
-                <MBtn onClick={createPet} loading={loading} disabled={!petForm.owner_name || !petForm.owner_cedula || !petForm.pet_name || !petForm.species}>
-                  Registrar mascota
-                </MBtn>
-                <MGhost onClick={() => setView("search")}>Cancelar</MGhost>
-              </div>
-            </div>
-          )}
-
-          {/* ── VISTA: Perfil de mascota ── */}
-          {view === "pet" && activePet && (
-            <>
-              <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-gray-200 shadow-lg p-8 mb-10 relative overflow-hidden">
-                <div className="absolute -right-10 -top-10 w-48 h-48 bg-teal-100/50 rounded-full blur-3xl pointer-events-none" />
-                <div className="flex flex-wrap items-start justify-between gap-6 relative z-10">
-                  <div className="flex items-center gap-6">
-                    <div className="w-20 h-20 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center shadow-inner">
-                      {activePet.species?.toLowerCase().includes("perro") ? <Dog className="w-8 h-8 text-teal-600" strokeWidth={2} /> : activePet.species?.toLowerCase().includes("gato") ? <Cat className="w-8 h-8 text-teal-600" strokeWidth={2} /> : <PawPrint className="w-8 h-8 text-teal-600" strokeWidth={2} />}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-3 mb-1">
-                        <h2 className="text-3xl font-bold text-gray-900 tracking-tight">{activePet.pet_name}</h2>
-                        <span className="text-xs bg-teal-50 border border-teal-100 text-teal-700 px-3 py-1 rounded-full font-semibold tracking-wider">#{activePet.id}</span>
-                      </div>
-                      <p className="text-sm text-gray-600 font-medium mb-1">
-                        {activePet.species}{activePet.breed ? ` · ${activePet.breed}` : ""}{activePet.age ? ` · ${activePet.age}` : ""}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500 mt-1">
-                        <span className="flex items-center gap-1.5 text-gray-700 font-medium"><User className="w-3.5 h-3.5 text-teal-600" strokeWidth={2.5} />{activePet.owner_name}</span>
-                        <span className="flex items-center gap-1.5"><IdCard className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />{activePet.owner_cedula}</span>
-                        {activePet.owner_phone && <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />{activePet.owner_phone}</span>}
-                      </div>
-                      {activePet.notes && (
-                        <div className="inline-flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg mt-3 shadow-sm">
-                          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-px" strokeWidth={2.5} />
-                          <span className="leading-relaxed">{activePet.notes}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={openEditPet}
-                      className="group flex items-center gap-2 bg-white/60 border border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 hover:text-teal-700 rounded-xl px-4 py-2.5 text-sm font-medium transition-all shadow-sm"
-                    >
-                      <Pencil className="w-4 h-4 text-gray-500 group-hover:text-teal-600" strokeWidth={2} />
-                      Editar ficha
-                    </button>
-                    <button onClick={() => setModal("confirmDeletePet")} className="flex items-center gap-2 bg-red-50 border border-red-100 hover:bg-red-100 hover:border-red-200 text-red-600 rounded-xl px-4 py-2.5 text-sm font-medium transition-all shadow-sm">
-                      <Trash2 className="w-4 h-4" strokeWidth={2} />Eliminar
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
-                  Historial médico
-                  <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-100">{records.length} registros</span>
-                </h3>
-                <button onClick={openNewRecord} className="bg-teal-600 hover:bg-teal-700 border border-teal-500 text-white rounded-xl px-5 py-2 text-sm font-medium transition shadow-md">
-                  + Nuevo registro
-                </button>
-              </div>
-
-              {records.length === 0 ? (
-                <div className="text-center py-20 bg-white/60 backdrop-blur-sm rounded-3xl border border-dashed border-gray-300">
-                  <p className="text-5xl mb-4 opacity-40">📋</p>
-                  <p className="text-gray-500 text-sm font-medium">Sin registros médicos aún</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {records.map((rec) => (
-                    <div key={rec.id} className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm p-6 hover:border-teal-300 hover:shadow-md transition duration-300">
-                      <div className="flex flex-col sm:flex-row items-start justify-between gap-5">
-                        <div className="min-w-0 flex-1 w-full">
-                          <div className="flex flex-wrap items-center gap-3 mb-4">
-                            <span className="text-xs font-mono bg-gray-100 border border-gray-200 text-gray-600 px-2 py-1 rounded-md">#{rec.id}</span>
-                            <span className="flex items-center gap-1.5 text-sm font-bold text-gray-800"><Calendar className="w-4 h-4 text-teal-600" strokeWidth={2.5} />{fmtDate(rec.visit_date)}</span>
-                            {rec.vet_name && <span className="flex items-center gap-1.5 text-xs text-teal-700 font-semibold bg-teal-50 px-2.5 py-1 rounded-md border border-teal-100"><User className="w-3.5 h-3.5" strokeWidth={2.5} />{rec.vet_name}</span>}
-                          </div>
-                          <div className="space-y-2.5">
-                            <div className="flex items-start gap-2">
-                              <Stethoscope className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" strokeWidth={2} />
-                              <p className="text-base text-gray-800 font-semibold tracking-tight leading-snug">{rec.diagnosis}</p>
-                            </div>
-                            {rec.treatment && (
-                              <div className="flex items-start gap-2">
-                                <Pill className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" strokeWidth={2} />
-                                <p className="text-sm text-gray-600 leading-relaxed">{rec.treatment}</p>
-                              </div>
-                            )}
-                          </div>
-                          {rec.supplies?.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-100">
-                              {rec.supplies.map((s, i) => (
-                                <span key={i} className="flex items-center gap-1.5 text-xs bg-blue-50 text-blue-800 border border-blue-100 px-3 py-1.5 rounded-lg font-medium shadow-sm">
-                                  <Beaker className="w-3 h-3 text-blue-600" strokeWidth={2.5} />
-                                  {s.supply_name}<span className="text-blue-500 font-semibold ml-1">{s.quantity} {s.unit}</span>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex sm:flex-col gap-2 flex-shrink-0 w-full sm:w-auto">
-                          <button onClick={() => openViewRecord(rec)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl px-4 py-2.5 text-sm font-medium transition shadow-sm">
-                            <Eye className="w-4 h-4 text-gray-500" strokeWidth={2} /><span>Ver</span>
-                          </button>
-                          <div className="flex gap-2">
-                            <button onClick={() => openEditRecord(rec)} className="flex items-center justify-center w-11 h-11 bg-white border border-gray-200 hover:bg-teal-50 hover:border-teal-200 hover:text-teal-700 text-gray-600 rounded-xl transition shadow-sm flex-shrink-0" title="Editar">
-                              <Pencil className="w-4 h-4" strokeWidth={2} />
-                            </button>
-                            <button onClick={() => { setActiveRecord(rec); setModal("confirmDeleteRecord"); }} className="flex items-center justify-center w-11 h-11 bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 rounded-xl transition shadow-sm flex-shrink-0" title="Eliminar">
-                              <Trash2 className="w-4 h-4" strokeWidth={2} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
         </div>
-      </div>
-
-      {/* ══ MODALES ══ */}
-
-      {/* Editar mascota */}
-      {modal === "editPet" && (
-        <ModalOverlay onClose={closeModal} wide>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">Editar ficha de {activePet?.pet_name}</h2>
-          <p className="text-sm text-gray-400 mb-6">Modifica los datos del dueño o de la mascota</p>
-
-          <SectionTitle>Datos del dueño</SectionTitle>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-            <MField label="Nombre completo *" value={petForm.owner_name} onChange={(v) => setPetForm((f) => ({ ...f, owner_name: v }))} placeholder="Ej: Juan Pérez" />
-            <MField label="Cédula *" value={petForm.owner_cedula} onChange={(v) => setPetForm((f) => ({ ...f, owner_cedula: v }))} placeholder="Ej: V-12345678" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-            <MField label="Teléfono" value={petForm.owner_phone} onChange={(v) => setPetForm((f) => ({ ...f, owner_phone: v }))} placeholder="Ej: 0414-1234567" />
-          </div>
-
-          <SectionTitle>Datos de la mascota</SectionTitle>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-            <MField label="Nombre *" value={petForm.pet_name} onChange={(v) => setPetForm((f) => ({ ...f, pet_name: v }))} placeholder="Ej: Firulais" />
-            <MField label="Especie *" value={petForm.species} onChange={(v) => setPetForm((f) => ({ ...f, species: v }))} placeholder="Ej: Perro, Gato" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-            <MField label="Raza" value={petForm.breed} onChange={(v) => setPetForm((f) => ({ ...f, breed: v }))} placeholder="Ej: Labrador" />
-            <MField label="Edad" value={petForm.age} onChange={(v) => setPetForm((f) => ({ ...f, age: v }))} placeholder="Ej: 3 años" />
-          </div>
-          <div className="mb-6">
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Notas adicionales</label>
-            <textarea value={petForm.notes} onChange={(e) => setPetForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Alergias conocidas, condiciones previas..." rows={3} className="w-full bg-white/60 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none transition" />
-          </div>
-
-          {error && <p className="text-red-600 text-sm mb-4 bg-red-50 p-3 rounded-xl border border-red-100">{error}</p>}
-
-          <div className="flex gap-3 pt-6 border-t border-gray-100">
-            <MBtn onClick={updatePet} loading={loading} disabled={!petForm.owner_name || !petForm.owner_cedula || !petForm.pet_name || !petForm.species}>
-              Guardar cambios
-            </MBtn>
-            <MGhost onClick={closeModal}>Cancelar</MGhost>
-          </div>
-        </ModalOverlay>
       )}
 
-      {/* Confirmar eliminar mascota */}
-      {modal === "confirmDeletePet" && (
-        <ModalOverlay onClose={closeModal}>
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">¿Eliminar mascota?</h2>
-          <p className="text-sm text-red-800 mb-8 bg-red-50 border border-red-200 p-5 rounded-2xl">
-            Se eliminará la ficha de <strong>{activePet?.pet_name}</strong> y todo su historial médico. Esta acción no se puede deshacer.
-          </p>
-          <div className="flex gap-3">
-            <button onClick={deletePet} disabled={loading} className="flex-1 bg-red-600 hover:bg-red-700 border border-red-500 text-white rounded-xl py-3 text-sm font-medium transition shadow-md disabled:opacity-50">
-              {loading ? "Eliminando..." : "Sí, eliminar"}
-            </button>
-            <MGhost onClick={closeModal}>Cancelar</MGhost>
-          </div>
-        </ModalOverlay>
+      {/* ── MODAL: Ver Registro ── */}
+      {viewModal && (
+        <ViewRecordModal
+          record={viewModal}
+          onClose={() => setViewModal(null)}
+        />
       )}
-
-      {/* Nuevo / Editar registro */}
-      {(modal === "newRecord" || modal === "editRecord") && (
-        <ModalOverlay onClose={closeModal} wide>
-          <h2 className="text-xl font-bold text-gray-900 mb-6 tracking-tight">
-            {modal === "newRecord" ? "Nuevo registro médico" : "Editar registro"}
-          </h2>
-
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Fecha *</label>
-              <input type="date" value={recordForm.visit_date} onChange={(e) => setRecordForm((f) => ({ ...f, visit_date: e.target.value }))} className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white transition" />
-            </div>
-            <MField label="Veterinario" value={recordForm.vet_name} onChange={(v) => setRecordForm((f) => ({ ...f, vet_name: v }))} placeholder="Nombre del veterinario" />
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Diagnóstico *</label>
-            <textarea value={recordForm.diagnosis} onChange={(e) => setRecordForm((f) => ({ ...f, diagnosis: e.target.value }))} placeholder="Describe el diagnóstico..." rows={2} className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white resize-none transition" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-5">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Tratamiento</label>
-              <textarea value={recordForm.treatment} onChange={(e) => setRecordForm((f) => ({ ...f, treatment: e.target.value }))} placeholder="Medicamentos, procedimientos..." rows={3} className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white resize-none transition" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Notas</label>
-              <textarea value={recordForm.notes} onChange={(e) => setRecordForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Observaciones, seguimiento..." rows={3} className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:bg-white resize-none transition" />
-            </div>
-          </div>
-
-          <SuppliesEditor />
-
-          {error && <div className="mb-4 bg-red-50 border border-red-200 p-3 rounded-xl"><p className="text-red-700 text-xs font-medium">{error}</p></div>}
-
-          <div className="flex gap-3 pt-4 border-t border-gray-200">
-            <MBtn onClick={modal === "newRecord" ? createRecord : updateRecord} loading={loading} disabled={!recordForm.diagnosis || !recordForm.visit_date}>
-              {modal === "newRecord" ? "Guardar registro" : "Guardar cambios"}
-            </MBtn>
-            <MGhost onClick={closeModal}>Cancelar</MGhost>
-          </div>
-        </ModalOverlay>
-      )}
-
-      {/* Ver registro */}
-      {modal === "viewRecord" && activeRecord && (
-        <ModalOverlay onClose={closeModal} wide>
-          <div className="flex items-center gap-3 mb-6">
-            <h2 className="text-xl font-bold text-gray-900 tracking-tight">Detalle del registro</h2>
-            <span className="text-xs font-mono bg-gray-100 border border-gray-200 text-gray-600 px-2 py-1 rounded-md">#{activeRecord.id}</span>
-          </div>
-
-          <div className="space-y-5">
-            <div className="flex flex-wrap gap-3">
-              <span className="flex items-center gap-1.5 text-sm font-bold text-gray-800"><Calendar className="w-4 h-4 text-teal-600" strokeWidth={2.5} />{fmtDate(activeRecord.visit_date)}</span>
-              {activeRecord.vet_name && <span className="flex items-center gap-1.5 text-xs text-teal-700 font-semibold bg-teal-50 px-2.5 py-1 rounded-md border border-teal-100"><User className="w-3.5 h-3.5" strokeWidth={2.5} />{activeRecord.vet_name}</span>}
-            </div>
-
-            <div className="bg-gray-50 rounded-2xl border border-gray-200 p-5 space-y-4">
-              <div>
-                <p className="text-xs font-bold text-teal-700 uppercase tracking-widest mb-1.5">Diagnóstico</p>
-                <p className="text-sm text-gray-800 leading-relaxed">{activeRecord.diagnosis}</p>
-              </div>
-              {activeRecord.treatment && (
-                <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5">Tratamiento</p>
-                  <p className="text-sm text-gray-700 leading-relaxed">{activeRecord.treatment}</p>
-                </div>
-              )}
-              {activeRecord.notes && (
-                <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5">Notas</p>
-                  <p className="text-sm text-gray-700 leading-relaxed">{activeRecord.notes}</p>
-                </div>
-              )}
-            </div>
-
-            {activeRecord.supplies?.length > 0 && (
-              <div>
-                <p className="text-xs font-bold text-teal-700 uppercase tracking-widest mb-3">Insumos utilizados</p>
-                <div className="flex flex-wrap gap-2">
-                  {activeRecord.supplies.map((s, i) => (
-                    <span key={i} className="flex items-center gap-1.5 text-xs bg-blue-50 text-blue-800 border border-blue-100 px-3 py-2 rounded-lg font-medium">
-                      <Beaker className="w-3 h-3 text-blue-600" strokeWidth={2.5} />
-                      {s.supply_name}<span className="text-blue-500 font-bold ml-1">{s.quantity} {s.unit}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-3 mt-6 pt-5 border-t border-gray-100">
-            <button onClick={() => openEditRecord(activeRecord)} className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 border border-teal-500 text-white rounded-xl py-3 text-sm font-medium transition shadow-md">
-              <Pencil className="w-4 h-4" strokeWidth={2} />Editar registro
-            </button>
-            <MGhost onClick={closeModal}>Cerrar</MGhost>
-          </div>
-        </ModalOverlay>
-      )}
-
-      {/* Confirmar eliminar registro */}
-      {modal === "confirmDeleteRecord" && (
-        <ModalOverlay onClose={closeModal}>
-          <h2 className="text-xl font-bold text-gray-900 mb-4">¿Eliminar registro?</h2>
-          <p className="text-sm text-red-800 mb-8 bg-red-50 border border-red-200 p-4 rounded-2xl">
-            Se eliminará el registro del <strong>{fmtDate(activeRecord?.visit_date)}</strong>. Esta acción no se puede deshacer.
-          </p>
-          <div className="flex gap-3">
-            <button onClick={deleteRecord} disabled={loading} className="flex-1 bg-red-600 hover:bg-red-700 border border-red-500 text-white rounded-xl py-3 text-sm font-medium transition shadow-md disabled:opacity-50">
-              {loading ? "Eliminando..." : "Sí, eliminar"}
-            </button>
-            <MGhost onClick={closeModal}>Cancelar</MGhost>
-          </div>
-        </ModalOverlay>
-      )}
-    </>
-  );
-}
-
-// ── Subcomponentes ──────────────────────────────────────────────
-function SectionTitle({ children }) {
-  return (
-    <p className="text-xs font-bold text-teal-700 uppercase tracking-widest mt-6 mb-4 border-b border-gray-100 pb-2">
-      {children}
-    </p>
-  );
-}
-
-function MField({ label, value, onChange, placeholder }) {
-  return (
-    <div className="mb-5">
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">{label}</label>
-      <input
-        type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full bg-white/60 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition backdrop-blur-sm shadow-sm"
-      />
     </div>
   );
 }
 
-function MBtn({ children, onClick, loading, disabled }) {
+// ── Sub-componentes ─────────────────────────────────────────────
+
+function RecordCard({ record, onView }) {
   return (
-    <button onClick={onClick} disabled={loading || disabled} className="flex-1 bg-teal-600 hover:bg-teal-700 border border-teal-500 text-white rounded-xl py-3 text-sm font-medium transition shadow-[0_4px_14px_0_rgba(13,148,136,0.39)] disabled:opacity-50 disabled:shadow-none disabled:hover:bg-teal-600">
-      {loading ? "Guardando..." : children}
-    </button>
+    <div
+      onClick={onView}
+      className="bg-white rounded-xl border border-slate-200 px-5 py-4 cursor-pointer
+                 hover:border-teal-300 hover:shadow-md transition-all group"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-4 flex-1 min-w-0">
+          <SpeciesIcon species={record.species} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-sm font-bold text-slate-800 truncate">
+                {record.pet_name}
+              </span>
+              {record.species && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium flex-shrink-0">
+                  {capitalize(record.species)}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mb-1.5">
+              {record.owner_name}
+              {record.vet_name && ` • Dr/a. ${record.vet_name}`}
+            </p>
+            <p className="text-sm text-slate-700 line-clamp-2">
+              {record.diagnosis}
+            </p>
+          </div>
+        </div>
+
+        <div className="text-right flex-shrink-0 space-y-2">
+          <p className="text-xs font-semibold text-slate-600">
+            {formatDate(record.visit_date)}
+          </p>
+          {record.supplies?.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full
+                         bg-cyan-50 text-cyan-700 border border-cyan-100"
+            >
+              <PackageIcon className="w-3.5 h-3.5" />
+              {record.supplies.length} insumo
+              {record.supplies.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          <div className="text-teal-600 opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium pt-1">
+            Ver detalle →
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function MGhost({ children, onClick }) {
+function ViewRecordModal({ record, onClose }) {
   return (
-    <button onClick={onClick} className="flex-1 bg-white/50 border border-gray-200 hover:bg-gray-100 text-gray-700 rounded-xl py-3 text-sm font-medium transition shadow-sm">
-      {children}
-    </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-teal-700 to-cyan-800">
+          <div className="flex items-center gap-4">
+            <SpeciesIcon species={record.species} lightMode />
+            <div>
+              <h2 className="text-lg font-bold text-white">
+                {record.pet_name}
+              </h2>
+              <p className="text-xs text-teal-100">
+                {record.owner_name} • {formatDate(record.visit_date)}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white transition-colors"
+          >
+            <CloseIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {record.species && (
+              <InfoRow label="Especie" value={capitalize(record.species)} />
+            )}
+            {record.breed && <InfoRow label="Raza" value={record.breed} />}
+            {record.age && <InfoRow label="Edad" value={record.age} />}
+            {record.vet_name && (
+              <InfoRow label="Veterinario" value={`Dr/a. ${record.vet_name}`} />
+            )}
+          </div>
+
+          <div className="border-t border-slate-100 pt-4 space-y-4">
+            <InfoRow label="Diagnóstico" value={record.diagnosis} />
+            {record.treatment && (
+              <InfoRow label="Tratamiento" value={record.treatment} />
+            )}
+            {record.notes && <InfoRow label="Notas" value={record.notes} />}
+          </div>
+
+          <div className="border-t border-slate-100 pt-4 flex gap-6">
+            {record.owner_cedula && (
+              <InfoRow label="Cédula Dueño" value={record.owner_cedula} />
+            )}
+            {record.owner_phone && (
+              <InfoRow label="Teléfono Dueño" value={record.owner_phone} />
+            )}
+          </div>
+
+          {record.supplies?.length > 0 && (
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">
+                Insumos utilizados
+              </p>
+              <div className="space-y-2">
+                {record.supplies.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between bg-teal-50 rounded-lg
+                               px-4 py-2.5 border border-teal-100"
+                  >
+                    <div className="flex items-center gap-2">
+                      <PackageIcon className="w-4 h-4 text-teal-600" />
+                      <span className="text-sm font-medium text-slate-700">
+                        {s.name}
+                      </span>
+                    </div>
+                    <span className="text-sm font-bold text-teal-700">
+                      {s.quantity_used} {s.unit}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t bg-slate-50 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 bg-white border border-slate-200
+                       hover:bg-slate-100 transition-colors"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, subtitle, children }) {
+  return (
+    <div className="space-y-3">
+      <div className="border-b border-slate-100 pb-1.5">
+        <p className="text-sm font-bold text-slate-800">{title}</p>
+        {subtitle && (
+          <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
+        )}
+      </div>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div>
+      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
+        {label}
+      </p>
+      <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-3">
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="bg-white rounded-xl border border-slate-200 px-5 py-4 animate-pulse"
+        >
+          <div className="flex gap-4">
+            <div className="w-10 h-10 bg-slate-200 rounded-xl" />
+            <div className="space-y-2 flex-1 pt-1">
+              <div className="h-4 bg-slate-200 rounded w-1/3" />
+              <div className="h-3 bg-slate-100 rounded w-1/4" />
+              <div className="h-3 bg-slate-100 rounded w-2/3 mt-2" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ onNew }) {
+  return (
+    <div className="text-center py-16 px-4 space-y-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50">
+      <div className="flex justify-center">
+        <div className="p-4 bg-teal-100 rounded-full">
+          <ClipboardIcon className="w-8 h-8 text-teal-600" />
+        </div>
+      </div>
+      <div>
+        <p className="text-slate-700 font-semibold text-lg">
+          No hay registros clínicos
+        </p>
+        <p className="text-slate-500 text-sm mt-1">
+          Crea el primer registro médico para comenzar a llevar el historial.
+        </p>
+      </div>
+      <button
+        onClick={onNew}
+        className="mt-2 inline-flex items-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-700 text-white
+                   text-sm font-semibold px-6 py-2.5 rounded-lg shadow-sm
+                   hover:from-teal-700 hover:to-cyan-800 transition-all"
+      >
+        <PlusIcon className="w-4 h-4" />
+        Crear primer registro
+      </button>
+    </div>
+  );
+}
+
+// ── UI Helpers & Icons ─────────────────────────────────────────────
+
+const inputClass = `w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800
+                    focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white transition-colors`;
+const labelClass = "block text-xs font-semibold text-slate-600 mb-1.5";
+
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("es-VE", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function capitalize(str) {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+// Componente Dinámico para Ícono de Especies
+function SpeciesIcon({ species, lightMode = false }) {
+  const s = (species || "").toLowerCase();
+
+  // Colores dinámicos según la especie para mantener la variedad visual de forma elegante
+  let colorClass = lightMode
+    ? "bg-white/20 text-white border-white/30"
+    : "bg-slate-50 text-slate-500 border-teal-900";
+
+  if (!lightMode) {
+    if (s === "perro") colorClass = "bg-blue-50 text-blue-500 border-blue-200";
+    else if (s === "gato")
+      colorClass = "bg-indigo-50 text-indigo-500 border-indigo-200";
+    else if (s === "ave") colorClass = "bg-sky-50 text-sky-500 border-sky-200";
+    else if (s === "conejo")
+      colorClass = "bg-pink-50 text-pink-500 border-pink-200";
+    else if (s === "reptil")
+      colorClass = "bg-emerald-50 text-emerald-500 border-emerald-200";
+  }
+
+  return (
+    <div
+      className={`p-2.5 rounded-xl border flex items-center justify-center flex-shrink-0 ${colorClass}`}
+    >
+      <PawIcon className="w-5 h-5 currentColor" />
+    </div>
+  );
+}
+
+// ── SVG Icons ─────────────────────────────────────────────
+
+function PawIcon({ className }) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 256 256">
+      <path d="M88,104a24,24,0,1,0-24-24A24,24,0,0,0,88,104Zm80-48a24,24,0,1,0,24,24A24,24,0,0,0,168,56Zm48,56a24,24,0,1,0,24,24A24,24,0,0,0,216,112ZM40,112a24,24,0,1,0,24,24A24,24,0,0,0,40,112Zm116.32,16H99.68A47.74,47.74,0,0,0,52,175.68a40.06,40.06,0,0,0,15,36A55.77,55.77,0,0,0,99.68,224h56.64A55.77,55.77,0,0,0,189,211.69a40.06,40.06,0,0,0,15-36A47.74,47.74,0,0,0,156.32,128Z" />
+    </svg>
+  );
+}
+
+function PackageIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+      <line x1="12" y1="22.08" x2="12" y2="12"></line>
+    </svg>
+  );
+}
+
+function ClipboardIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+      <path d="M9 14h6"></path>
+      <path d="M9 18h6"></path>
+      <path d="M9 10h.01"></path>
+    </svg>
+  );
+}
+
+function AlertTriangleIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+      <line x1="12" y1="9" x2="12" y2="13"></line>
+      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+    </svg>
+  );
+}
+
+function CloseIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="18" y1="6" x2="6" y2="18"></line>
+      <line x1="6" y1="6" x2="18" y2="18"></line>
+    </svg>
+  );
+}
+
+function SaveIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+      <polyline points="17 21 17 13 7 13 7 21"></polyline>
+      <polyline points="7 3 7 8 15 8"></polyline>
+    </svg>
+  );
+}
+
+function PlusIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="12" y1="5" x2="12" y2="19"></line>
+      <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>
+  );
+}
+
+function SpinnerIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24">
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      ></circle>
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      ></path>
+    </svg>
   );
 }
