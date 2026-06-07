@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import db from "../../../../lib/db";
 
-// GET 
+// GET
 export async function GET(request, { params }) {
   try {
     const { id } = params;
@@ -28,7 +28,7 @@ export async function GET(request, { params }) {
   }
 }
 
-// PUT 
+// PUT
 export async function PUT(request, { params }) {
   try {
     const { id } = params;
@@ -101,7 +101,7 @@ WHERE id = ?`,
   }
 }
 
-// DELETE 
+// DELETE
 export async function DELETE(request, { params }) {
   try {
     const { id } = params;

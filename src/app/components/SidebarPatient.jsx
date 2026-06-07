@@ -1,21 +1,29 @@
-//Sidebar para pacientes.
 "use client";
+
 import React, { useState } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
+import { motion, LayoutGroup } from "framer-motion";
 import {
   Calendar,
   Settings,
   Dog,
   LogOut,
-  Bell,
   Menu,
   X,
   ChevronLeft,
 } from "lucide-react";
-import Link from "next/link";
 
 const Sidebar = () => {
-  const [isOpen, setIsOpen] = useState(false); // Móvil
-  const [isCollapsed, setIsCollapsed] = useState(false); // Escritorio
+  const [isOpen, setIsOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const pathname = usePathname();
+
+  // Rutas exclusivas para pacientes
+  const menuItems = [
+    { icon: <Calendar />, label: "Citas", href: "/pacients/home" },
+    { icon: <Dog />, label: "Mis mascotas", href: "/pacients/historial" },
+  ];
 
   return (
     <>
@@ -29,19 +37,21 @@ const Sidebar = () => {
         <Menu size={24} />
       </button>
 
-      {/* OVERLAY FONDO OSCURO */}
+      {/* OVERLAY FONDO OSCURO CON ANIMACIÓN */}
       {isOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden transition-opacity"
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col h-[100dvh] text-white overflow-hidden border-r border-cyan-400/20 shadow-2xl transition-all duration-300 ease-in-out
-        ${isCollapsed ? "md:w-20" : "md:w-72"}
-        ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col h-[100dvh] text-white overflow-hidden border-r border-cyan-400/20 shadow-2xl transition-all duration-300 ease-in-out 
+          ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"} 
+          ${isCollapsed ? "md:w-20" : "md:w-72"}`}
       >
         {/* CAPA DE FONDO DECORATIVA */}
         <div className="absolute inset-0 -z-10 bg-[#074652]">
@@ -52,16 +62,22 @@ const Sidebar = () => {
 
         {/* HEADER */}
         <div
-          className={`flex items-center p-6 mb-2 transition-all duration-300 ${isCollapsed ? "flex-col gap-4 justify-center" : "justify-between"}`}
+          className={`p-6 mb-2 flex items-center justify-between ${
+            isCollapsed ? "flex-col gap-4" : ""
+          }`}
         >
-          {/* Logo Adaptativo */}
+          {/* Logo Adaptativo con Animación */}
           {!isCollapsed ? (
-            <div className="flex flex-col gap-1">
-              <h1 className="text-3xl font-black tracking-tighter text-white uppercase italic drop-shadow-md">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex flex-col gap-2"
+            >
+              <h1 className="text-4xl font-black tracking-tighter text-white uppercase italic drop-shadow-md">
                 HILMI
               </h1>
-              <div className="bg-teal-400 h-1.5 w-12 rounded-full shadow-[0_0_15px_rgba(45,212,191,0.5)]" />
-            </div>
+              <div className="bg-teal-400 h-2 w-16 rounded-full shadow-[0_0_15px_rgba(45,212,191,0.5)]" />
+            </motion.div>
           ) : (
             <div className="text-2xl font-black text-teal-400 italic">H.</div>
           )}
@@ -70,9 +86,9 @@ const Sidebar = () => {
             {/* TOGGLE DESKTOP */}
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="hidden md:flex p-2 rounded-xl text-cyan-200 hover:text-white hover:bg-white/10 transition-colors"
+              className="hidden md:block text-cyan-200 hover:text-white transition-colors"
             >
-              {isCollapsed ? <Menu size={22} /> : <ChevronLeft size={24} />}
+              {isCollapsed ? <Menu size={24} /> : <ChevronLeft size={26} />}
             </button>
             {/* CERRAR MÓVIL */}
             <button
@@ -84,57 +100,55 @@ const Sidebar = () => {
           </div>
         </div>
 
-        {/* NAVEGACIÓN */}
+        {/* NAVEGACIÓN DINÁMICA CON ANIMACIONES */}
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <NavItem
-            icon={<Calendar />}
-            label="Calendario"
-            active
-            isCollapsed={isCollapsed}
-          />
-          <NavItem
-            icon={<Dog />}
-            label="Mis Mascotas"
-            isCollapsed={isCollapsed}
-          />
-          <NavItem
-            icon={<Bell />}
-            label="Notificaciones"
-            isCollapsed={isCollapsed}
-          />
+          <LayoutGroup>
+            {menuItems.map((item) => (
+              <NavItem
+                key={item.href}
+                icon={item.icon}
+                label={item.label}
+                href={item.href}
+                active={pathname === item.href}
+                isCollapsed={isCollapsed}
+              />
+            ))}
+          </LayoutGroup>
         </nav>
 
         {/* SECCIÓN INFERIOR */}
         <div
-          className={`mt-auto flex flex-col p-4 gap-4 pb-8 ${isCollapsed ? "items-center" : ""}`}
+          className={`mt-auto flex flex-col p-4 gap-4 pb-8 ${
+            isCollapsed ? "items-center" : ""
+          }`}
         >
-          <div
-            className={`pt-4 border-t border-white/10 w-full ${isCollapsed ? "flex justify-center" : ""}`}
-          >
+          <div className="pt-4 border-t border-white/10 w-full">
             <NavItem
               icon={<Settings />}
               label="Configuración"
+              href="/pacients/settings"
+              active={pathname === "/pacients/settings"}
               isCollapsed={isCollapsed}
             />
           </div>
 
           <Link href="/" className="w-full">
-            <button
-              title={isCollapsed ? "Cerrar Sesión" : ""}
-              className={`w-full bg-teal-500 text-white flex items-center justify-center rounded-xl font-extrabold hover:bg-cyan-400 transition-all duration-300 shadow-lg active:scale-95 border border-white/10 group
-                ${isCollapsed ? "h-12 w-12 mx-auto px-0" : "py-4 px-5 gap-3 text-sm uppercase tracking-widest"}`}
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.95 }}
+              className={`w-full bg-teal-500 text-white rounded-xl font-extrabold flex items-center justify-center hover:bg-teal-400 transition-colors shadow-lg border border-white/10 ${
+                isCollapsed
+                  ? "h-12 w-12 mx-auto px-0"
+                  : "py-4 gap-3 text-sm uppercase tracking-widest"
+              }`}
             >
               <LogOut
                 size={18}
                 strokeWidth={3}
-                className={`transition-transform flex-shrink-0 ${!isCollapsed && "group-hover:-translate-x-1"}`}
+                className={`flex-shrink-0 ${!isCollapsed ? "mr-1" : ""}`}
               />
-              {!isCollapsed && (
-                <span className="whitespace-nowrap transition-opacity duration-300">
-                  Cerrar Sesión
-                </span>
-              )}
-            </button>
+              {!isCollapsed && <span>Cerrar Sesión</span>}
+            </motion.button>
           </Link>
         </div>
       </aside>
@@ -142,36 +156,56 @@ const Sidebar = () => {
   );
 };
 
-// Sub-componente NavItem optimizado
-const NavItem = ({ icon, label, active = false, isCollapsed }) => (
-  <div
-    title={isCollapsed ? label : ""}
-    className={`group flex items-center rounded-xl cursor-pointer transition-all duration-200
-    ${isCollapsed ? "justify-center h-12 w-12 mx-auto px-0" : "px-5 py-4 gap-4"}
-    ${
-      active
-        ? "bg-white/15 text-white border border-white/10 shadow-inner"
-        : "text-cyan-100/70 hover:bg-white/5 hover:text-white"
-    }`}
-  >
-    <div
-      className={`flex-shrink-0 transition-colors duration-200 ${
-        active ? "text-teal-300" : "text-cyan-200/40 group-hover:text-teal-300"
-      }`}
+// Sub-componente NavItem con Framer Motion (Igual al de Admin)
+const NavItem = ({ icon, label, href, active, isCollapsed }) => (
+  <Link href={href} className="block relative">
+    <motion.div
+      whileHover={{ x: isCollapsed ? 0 : 5 }}
+      whileTap={{ scale: 0.97 }}
+      className={`group flex items-center rounded-xl cursor-pointer transition-colors duration-300 relative
+        ${
+          isCollapsed
+            ? "justify-center h-12 w-12 mx-auto px-0"
+            : "px-5 py-4 gap-4"
+        }
+        ${active ? "text-white" : "text-cyan-100/70 hover:text-white"}`}
     >
-      {React.cloneElement(icon, { size: 22, strokeWidth: active ? 2.5 : 2 })}
-    </div>
+      {/* Indicador de fondo animado (La pastilla deslizante) */}
+      {active && (
+        <motion.div
+          layoutId="activePill"
+          className="absolute inset-0 bg-white/15 border border-white/10 shadow-[inset_0_0_10px_rgba(255,255,255,0.05)] rounded-xl -z-10"
+          transition={{ type: "spring", stiffness: 350, damping: 30 }}
+        />
+      )}
 
-    {!isCollapsed && (
-      <span
-        className={`text-sm font-bold tracking-tight whitespace-nowrap overflow-hidden transition-all duration-300 ${
-          active ? "opacity-100" : "opacity-80"
+      {/* Ícono animado */}
+      <motion.div
+        animate={{
+          scale: active ? 1.15 : 1,
+          rotate: active ? [0, -5, 5, 0] : 0,
+        }}
+        className={`transition-colors shrink-0 ${
+          active
+            ? "text-teal-300"
+            : "text-cyan-200/40 group-hover:text-teal-300"
         }`}
       >
-        {label}
-      </span>
-    )}
-  </div>
+        {React.cloneElement(icon, { size: 22, strokeWidth: active ? 2.5 : 2 })}
+      </motion.div>
+
+      {/* Texto */}
+      {!isCollapsed && (
+        <span
+          className={`text-sm font-bold tracking-tight transition-opacity duration-300 ${
+            active ? "opacity-100" : "opacity-80"
+          }`}
+        >
+          {label}
+        </span>
+      )}
+    </motion.div>
+  </Link>
 );
 
 export default Sidebar;
