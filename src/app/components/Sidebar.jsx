@@ -1,7 +1,7 @@
 ///Sidebar mostrado en la parte izquierda de la pantalla,
 // con animaciones y diseño moderno. Se adapta a dispositivos móviles y
 // tiene un botón para colapsar/expandir el menú. (Asistentes)
-"use client"
+"use client";
 import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";

@@ -1,5 +1,5 @@
+//Sidebar para la vista de pacientes, con rutas al home y tarjetero de las ascotas del dueño.
 "use client";
-
 import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";

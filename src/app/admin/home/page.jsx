@@ -1,7 +1,7 @@
-//El panel de administración es una sección exclusiva para los administradores de la plataforma, donde pueden gestionar 
+//El panel de administración es una sección exclusiva para los administradores de la plataforma, donde pueden gestionar
 // y supervisar diversos aspectos del sistema. Aquí, los administradores pueden acceder a herramientas y funcionalidades que les permiten controlar
-//  el contenido, los usuarios, las configuraciones y otros elementos clave de la plataforma. El diseño del panel de administración está pensado para ser intuitivo y eficiente, 
-// facilitando la navegación y el acceso a las funciones necesarias para mantener el buen funcionamiento de la plataforma. 
+//  el contenido, los usuarios, las configuraciones y otros elementos clave de la plataforma. El diseño del panel de administración está pensado para ser intuitivo y eficiente,
+// facilitando la navegación y el acceso a las funciones necesarias para mantener el buen funcionamiento de la plataforma.
 import AdminDashboard from "../../components/AdminDashboard";
 
 export const metadata = {

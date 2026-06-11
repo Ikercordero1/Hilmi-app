@@ -19,7 +19,7 @@ export default function AssistantHome() {
   useEffect(() => {
     loadStats();
 
-    // Reducido a 10 segundos (10000ms) para una sensación más "en tiempo real"
+    //  10 segundos (10000ms) para una sensación más "en tiempo real"
     const interval = setInterval(loadStats, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -46,7 +46,7 @@ export default function AssistantHome() {
       console.log("📦 Datos Solicitudes:", reqsData);
       console.log("📦 Datos Veterinarios:", vetsData);
 
-      // Truco: Si tu API devuelve { data: [...] }, esto extrae el arreglo. Si ya es arreglo, lo deja igual.
+      // Trampilla por si la API devuelve{ data: [...] }, esto extrae el arreglo. Si ya es arreglo, lo deja igual.
       const appts = Array.isArray(apptsData)
         ? apptsData
         : apptsData.data || apptsData.appointments || [];
@@ -197,7 +197,6 @@ function StatCard({ icon, label, value, color, onClick, clickable }) {
     cyan: "bg-cyan-50 border-cyan-100 text-cyan-700",
     gray: "bg-gray-50 border-gray-100 text-gray-500",
     alert: "bg-red-500 border-red-600 text-white",
-    
   };
 
   return (

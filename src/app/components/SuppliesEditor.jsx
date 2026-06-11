@@ -45,7 +45,7 @@ export default function SuppliesEditor({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Insumos que NO están ya seleccionados + filtramos por búsqueda
+  // Insumos que no están ya seleccionados + filtramos por búsqueda
   const selectedIds = new Set(value.map((v) => v.inventory_id));
 
   const filteredInventory = inventory.filter((item) => {

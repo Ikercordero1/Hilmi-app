@@ -1,4 +1,3 @@
-
 //En este archivo se manejan las rutas para la gestión de usuarios por parte del admin.
 import { NextResponse } from "next/server";
 import db from "../../../../lib/db";

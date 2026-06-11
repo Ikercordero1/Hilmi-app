@@ -1,4 +1,4 @@
-//Este archivo maneja las operaciones relacionadas con las solicitudes de citas 
+//Este archivo maneja las operaciones relacionadas con las solicitudes de citas
 // (GET para listar, POST para crear nuevas solicitudes en el calendario).
 import { NextResponse } from "next/server";
 import db from "../../../lib/db";

@@ -1,3 +1,7 @@
+//API especial para que el cliente pueda autodeclarar una vacuna aplicada a su mascota,
+//  sin necesidad de que un veterinario lo registre. Esto es útil para casos en los que el
+//  cliente no tiene acceso inmediato a un veterinario o para registrar vacunas aplicadas en casa.
+
 import { NextResponse } from "next/server";
 import db from "../../../lib/db";
 
@@ -12,8 +16,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
     }
 
-    // Insertamos en medical_records
-    // vet_name será 'Reporte de Cliente', diagnosis será el nombre de la vacuna
+    
     const [result] = await db.query(
       `INSERT INTO medical_records (pet_id, vet_name, visit_date, diagnosis, treatment, notes)
        VALUES (?, 'Reporte de Cliente', ?, ?, 'Registro de Vacunación', 'Autodeclarada')`,

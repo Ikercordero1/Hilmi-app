@@ -19,7 +19,7 @@ import {
   Loader2,
   LogOut,
 } from "lucide-react";
-//Rutas
+//Rutas del calendario
 import AppointmentCalendar from "./Appointmentcalendar";
 import RequestsPanel from "./RequestPanel";
 import PaymentModal from "./PaymentModal";

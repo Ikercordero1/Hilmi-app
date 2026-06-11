@@ -1,4 +1,4 @@
-// Este componente maneja la vista principal de solicitudes, con filtros, 
+// Este componente maneja la vista principal de solicitudes, con filtros,
 // detalle y acciones de aprobación/rechazo.
 "use client";
 import { useState, useEffect } from "react";

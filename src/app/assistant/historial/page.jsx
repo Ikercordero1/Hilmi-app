@@ -6,8 +6,7 @@ export default function MedicalHistoryAssistant() {
   return (
     <div className="w-full  flex flex-col bg-white/70 transparent border/20 shadow-lg p-6 rounded-lg backdrop-blur-md opacity-100">
       <h1 className="text-2xl font-bold text-transparent shadow-md-text bg-gradient-to-r from-teal-700 to-cyan-700 bg-clip-text mb-4">
-        Historial Médico
-         (Assistente)
+        Historial Médico (Assistente)
       </h1>
 
       <MedicalHistory />

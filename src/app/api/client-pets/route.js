@@ -17,7 +17,7 @@ export async function GET(request) {
   if (/^\d+$/.test(cedula)) {
     cedula = "v" + cedula;
   }
-  // ==============================================
+
 
   try {
     // La consulta se mantiene limpia y tradicional

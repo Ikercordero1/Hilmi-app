@@ -7,9 +7,7 @@ import StockManager from "../../components/StockManager";
 export default function StockAdminPage() {
   return (
     <div className="w-full">
-      <h1 className="text-2xl font-bold text-teal-800 mb-4">
-      Vista (Admin)
-      </h1>
+      <h1 className="text-2xl font-bold text-teal-800 mb-4">Vista (Admin)</h1>
 
       <StockManager />
     </div>

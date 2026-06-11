@@ -1,4 +1,4 @@
-//Página del historial médico para el admin, muestra el 
+//Página del historial médico para el admin, muestra el
 // historial de todos los pacientes (mascotas) enlazada con un componente
 import MedicalHistory from "../../components/MedicalHistory";
 

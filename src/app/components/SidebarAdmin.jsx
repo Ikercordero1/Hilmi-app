@@ -1,9 +1,9 @@
-//SIDEBAR ADMIN CON ANIMACIONES Y MEJORAS DE UX
+//SIDEBAR ADMIN CON ANIMACIONES
 "use client";
 import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { motion, LayoutGroup } from "framer-motion"; 
+import { motion, LayoutGroup } from "framer-motion";
 import {
   Home,
   Settings,

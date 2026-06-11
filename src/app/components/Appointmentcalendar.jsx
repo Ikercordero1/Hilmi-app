@@ -1,6 +1,6 @@
-//Calendario de citas para veterinaria, con vistas diaria y semanal, gestión de veterinarios y CRUD completo de citas. 
-// Manejo correcto de fechas en zona local sin problemas de UTC. Interfaz limpia y funcional 
-// con modales para detalles y edición.
+// Calendario semanal para el asistente de Hilmi.
+// Selector de veterinario con pills + scroll horizontal (escala a N vets).
+// Vista semanal unica. CRUD completo de citas. Modales limpios.
 "use client";
 import { useState, useEffect } from "react";
 import {
@@ -11,22 +11,47 @@ import {
   User,
   Pencil,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  X,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 
-//  Manejo de fechas (Sin problemas de zona horaria)
+// ── Utilidades de fecha (sin UTC) ─────────────────────────────────────────────
 const getLocalTodayString = () => {
   const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
 };
 
 const getLocalFixedDate = (dateString) => {
   if (!dateString) return new Date();
-  const cleanDate = dateString.split("T")[0]; // Cortamos cualquier hora si la hay
-  const [year, month, day] = cleanDate.split("-");
-  return new Date(year, month - 1, day); // Mes en JS va de 0 a 11
+  const [y, m, d] = dateString.split("T")[0].split("-");
+  return new Date(y, m - 1, d);
+};
+
+const toDateString = (d) =>
+  [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+
+const getWeekDays = (base) => {
+  const date = getLocalFixedDate(base);
+  const diff = date.getDay() === 0 ? -6 : 1 - date.getDay();
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + diff);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return toDateString(d);
+  });
 };
 
 const HOURS = [
@@ -40,40 +65,30 @@ const HOURS = [
   "16:00",
   "17:00",
 ];
-const fmtTime = (t) => t?.slice(0, 5) ?? "";
+const DAY_LABELS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
 
-const fmtDate = (d) =>
+const fmtTime = (t) => t?.slice(0, 5) ?? "";
+const fmtShort = (d) =>
   getLocalFixedDate(d).toLocaleDateString("es-ES", {
     day: "numeric",
     month: "short",
   });
-
-const getWeekDays = (base) => {
-  const date = getLocalFixedDate(base);
-  const diff = date.getDay() === 0 ? -6 : 1 - date.getDay();
-  const monday = new Date(date);
-  monday.setDate(date.getDate() + diff);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-
-    // Devolución del formato YYYY-MM-DD en base local, no con toISOString (UTC)
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+const fmtLong = (d) =>
+  getLocalFixedDate(d).toLocaleDateString("es-ES", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
   });
-};
 
-const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-
+// ── Componente principal ──────────────────────────────────────────────────────
 export default function AppointmentCalendar() {
-  const today = getLocalTodayString(); // El "hoy" siempre será correcto localmente
+  const today = getLocalTodayString();
 
   const [vets, setVets] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [selectedDate, setSelectedDate] = useState(today);
-  const [view, setView] = useState("day");
+  const [selectedVet, setSelectedVet] = useState(null); // objeto vet | null = todos
+
   const [modal, setModal] = useState(null);
   const [activeAppt, setActiveAppt] = useState(null);
   const [activeVet, setActiveVet] = useState(null);
@@ -92,10 +107,16 @@ export default function AppointmentCalendar() {
   useEffect(() => {
     loadVets();
   }, []);
-
   useEffect(() => {
     loadAppointments();
-  }, [selectedDate, view]);
+  }, [selectedDate]);
+
+  // Si el vet seleccionado fue eliminado, resetear
+  useEffect(() => {
+    if (selectedVet && !vets.find((v) => v.id === selectedVet.id)) {
+      setSelectedVet(null);
+    }
+  }, [vets]);
 
   const loadVets = async () => {
     try {
@@ -112,10 +133,9 @@ export default function AppointmentCalendar() {
       const res = await fetch("/api/appointments", { cache: "no-store" });
       const data = await res.json();
       if (!Array.isArray(data)) return;
-      const dates = view === "week" ? weekDays : [selectedDate];
       setAppointments(
         data.filter((a) =>
-          dates.some((d) => a.appointment_date?.startsWith(d)),
+          weekDays.some((d) => a.appointment_date?.startsWith(d)),
         ),
       );
     } catch (e) {
@@ -128,10 +148,22 @@ export default function AppointmentCalendar() {
       (a) =>
         a.appointment_time?.startsWith(time) &&
         a.vet_name === vetName &&
-        a.appointment_date?.startsWith(date ?? selectedDate),
+        a.appointment_date?.startsWith(date),
     );
 
-  const openSlot = (time, vetName, date) => {
+  // Vets a mostrar segun filtro
+  const visibleVets = selectedVet ? [selectedVet] : vets;
+
+  const shiftWeek = (dir) => {
+    const d = getLocalFixedDate(selectedDate);
+    d.setDate(d.getDate() + dir * 7);
+    setSelectedDate(toDateString(d));
+  };
+
+  const weekLabel = `${fmtShort(weekDays[0])} — ${fmtLong(weekDays[6])}`;
+
+  // ── Acciones de modal ────────────────────────────────────────────────────
+  const openSlotModal = (time, vetName, date) => {
     setError("");
     const appt = getAppt(time, vetName, date);
     if (appt) {
@@ -142,7 +174,7 @@ export default function AppointmentCalendar() {
       });
       setModal("detail");
     } else {
-      setActiveSlot({ time, vetName, date: date ?? selectedDate });
+      setActiveSlot({ time, vetName, date });
       setApptForm({ pet_name: "", owner_name: "" });
       setModal("newAppt");
     }
@@ -153,7 +185,7 @@ export default function AppointmentCalendar() {
     setError("");
   };
 
-  // ── CRUD Citas ────────────────────────────────────────────────
+  // ── CRUD Citas ────────────────────────────────────────────────────────────
   const createAppt = async () => {
     setLoading(true);
     setError("");
@@ -178,7 +210,7 @@ export default function AppointmentCalendar() {
       closeModal();
       loadAppointments();
     } catch {
-      setError("Error de conexión");
+      setError("Error de conexion");
     } finally {
       setLoading(false);
     }
@@ -204,7 +236,7 @@ export default function AppointmentCalendar() {
       closeModal();
       loadAppointments();
     } catch {
-      setError("Error de conexión");
+      setError("Error de conexion");
     } finally {
       setLoading(false);
     }
@@ -213,7 +245,6 @@ export default function AppointmentCalendar() {
   const deleteAppt = async () => {
     setLoading(true);
     setError("");
-
     try {
       const res = await fetch(`/api/appointments/${activeAppt.id}`, {
         method: "DELETE",
@@ -226,13 +257,13 @@ export default function AppointmentCalendar() {
       closeModal();
       loadAppointments();
     } catch {
-      setError("Error de conexión");
+      setError("Error de conexion");
     } finally {
       setLoading(false);
     }
   };
 
-  // ── CRUD Vets ─────────────────────────────────────────────────
+  // ── CRUD Vets ─────────────────────────────────────────────────────────────
   const createVet = async () => {
     setLoading(true);
     setError("");
@@ -251,7 +282,7 @@ export default function AppointmentCalendar() {
       closeModal();
       loadVets();
     } catch {
-      setError("Error de conexión");
+      setError("Error de conexion");
     } finally {
       setLoading(false);
     }
@@ -272,214 +303,120 @@ export default function AppointmentCalendar() {
       setVets((prev) => prev.filter((v) => v.id !== activeVet.id));
       closeModal();
     } catch {
-      setError("Error de conexión");
+      setError("Error de conexion");
     } finally {
       setLoading(false);
     }
   };
 
-  const shiftDate = (days) => {
-    const d = getLocalFixedDate(selectedDate);
-    d.setDate(d.getDate() + days);
-
-    // Convertimos manualmente en lugar de toISOString
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-
-    setSelectedDate(`${year}-${month}-${day}`);
-  };
-
-  const todayLabel = getLocalFixedDate(selectedDate).toLocaleDateString(
-    "es-ES",
-    {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    },
-  );
-  const weekLabel = `${fmtDate(weekDays[0])} — ${getLocalFixedDate(weekDays[6]).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}`;
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="w-full">
-      {/* ── Header del calendario ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        {/* Tabs día/semana */}
-        <div className="flex items-center bg-white rounded-xl p-1 border border-gray-200 shadow-sm">
-          {["day", "week"].map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                view === v
-                  ? "bg-teal-600 text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              {v === "day" ? "Día" : "Semana"}
-            </button>
-          ))}
+    <div className="w-full space-y-4 text-slate-800 antialiased font-sans">
+      {/* ── Barra superior (Rediseñada con Inspiración del Dashboard UX) ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+        {/* Navegacion semana */}
+        <div className="flex items-center justify-between w-full sm:w-auto bg-white/80 backdrop-blur-xl rounded-2xl p-1.5 border border-slate-200 shadow-sm">
+          <NavBtn onClick={() => shiftWeek(-1)}>
+            <ChevronLeft size={18} />
+          </NavBtn>
+          <span className="text-sm font-bold text-slate-800 min-w-[160px] sm:min-w-[190px] text-center capitalize select-none tracking-tight">
+            {weekLabel}
+          </span>
+          <NavBtn onClick={() => shiftWeek(1)}>
+            <ChevronRight size={18} />
+          </NavBtn>
         </div>
 
-        {/* Navegación fechas */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => shiftDate(view === "day" ? -1 : -7)}
-            className="w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-teal-400 hover:text-teal-600 transition flex items-center justify-center shadow-sm"
-          >
-            ‹
-          </button>
-          <span className="text-sm text-gray-600 min-w-[200px] text-center capitalize font-medium">
-            {view === "day" ? todayLabel : weekLabel}
-          </span>
-          <button
-            onClick={() => shiftDate(view === "day" ? 1 : 7)}
-            className="w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-teal-400 hover:text-teal-600 transition flex items-center justify-center shadow-sm"
-          >
-            ›
-          </button>
+        {/* Acciones */}
+        <div className="flex items-center gap-3 w-full sm:w-auto">
           <button
             onClick={() => setSelectedDate(today)}
-            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs text-gray-500 hover:border-teal-400 hover:text-teal-600 transition shadow-sm"
+            className="flex-1 sm:flex-none px-5 py-2.5 rounded-2xl border border-slate-200 hover:border-teal-300 hover:bg-teal-50 text-slate-700 hover:text-teal-700 text-xs font-bold transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-center"
           >
             Hoy
           </button>
+          <button
+            onClick={() => {
+              setNewVetName("");
+              setError("");
+              setModal("newVet");
+            }}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl px-5 py-2.5 text-sm font-bold transition-all shadow-md shadow-teal-600/20 hover:scale-[1.02] hover:-translate-y-0.5"
+          >
+            <Plus size={16} /> Veterinario
+          </button>
         </div>
-
-        {/* Botón nuevo veterinario */}
-        <button
-          onClick={() => {
-            setNewVetName("");
-            setError("");
-            setModal("newVet");
-          }}
-          className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl px-4 py-2 text-sm font-medium transition shadow-sm"
-        >
-          + Veterinario
-        </button>
       </div>
 
-      {/* ── Vista Diaria ── */}
-      {view === "day" && (
-        <div className="bg-white rounded-2xl border border-cyan-800 shadow-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-teal-500">
-                  <th className="py-3 px-4 text-left text-xs font-semibold text-white uppercase w-20">
-                    Hora
-                  </th>
-                  {vets.length === 0 ? (
-                    <th className="py-3 px-4 text-gray-300 font-normal italic text-center text-xs">
-                      Añade un veterinario para comenzar →
-                    </th>
-                  ) : (
-                    vets.map((vet) => (
-                      <th key={vet.id} className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <span className="font-semibold text-white text-sm">
-                            {vet.name}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setActiveVet(vet);
-                              setError("");
-                              setModal("confirmDeleteVet");
-                            }}
-                            className="w-4 h-4 rounded-full bg-white hover:bg-red-100 text-gray-400 hover:text-red-500 flex items-center justify-center align-center text-xs transition"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </th>
-                    ))
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {HOURS.map((hour) => (
-                  <tr
-                    key={hour}
-                    className="hover:bg-gray-50/50 transition-colors"
-                  >
-                    <td className="py-3 px-4 text-xs font-mono font-semibold bg-gray-100 text-gray-500">
-                      {hour}
-                    </td>
-                    {vets.length === 0 ? (
-                      <td className="py-3 px-4 text-center text-gray-200 text-xs">
-                        —
-                      </td>
-                    ) : (
-                      vets.map((vet) => {
-                        const appt = getAppt(hour, vet.name, selectedDate);
-                        return (
-                          <td key={vet.id} className="py-2 px-3">
-                            {appt ? (
-                              <button
-                                onClick={() =>
-                                  openSlot(hour, vet.name, selectedDate)
-                                }
-                                className="w-full rounded-xl py-2 px-3 text-left bg-teal-50 border border-teal-200 hover:bg-teal-100 transition"
-                              >
-                                <div className="text-xs font-semibold text-teal-800 flex items-center gap-1.5">
-                                  <PawPrint
-                                    size={14}
-                                    className="text-teal-600"
-                                  />{" "}
-                                  {appt.pet_name}
-                                </div>
-                                <p className="text-xs text-teal-600 mt-0.5 ml-5">
-                                  {appt.owner_name}
-                                </p>
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() =>
-                                  openSlot(hour, vet.name, selectedDate)
-                                }
-                                className="w-full rounded-xl py-2 px-3 text-center text-xs text-gray-300 border border-dashed border-gray-200 hover:border-teal-300 hover:text-teal-500 hover:bg-teal-50/50 transition"
-                              >
-                                + Agendar
-                              </button>
-                            )}
-                          </td>
-                        );
-                      })
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* ── Pills selector de veterinario ── */}
+      {vets.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {/* Pill "Todos" */}
+          <VetPill
+            label="Todos"
+            count={null}
+            active={selectedVet === null}
+            onClick={() => setSelectedVet(null)}
+            onDelete={null}
+          />
+          {vets.map((vet) => {
+            const apptCount = appointments.filter(
+              (a) => a.vet_name === vet.name,
+            ).length;
+            return (
+              <VetPill
+                key={vet.id}
+                label={vet.name}
+                count={apptCount}
+                active={selectedVet?.id === vet.id}
+                onClick={() =>
+                  setSelectedVet(selectedVet?.id === vet.id ? null : vet)
+                }
+                onDelete={() => {
+                  setActiveVet(vet);
+                  setError("");
+                  setModal("confirmDeleteVet");
+                }}
+              />
+            );
+          })}
         </div>
       )}
 
-      {/* ── Vista Semanal ── */}
-      {view === "week" && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {/* ── Tabla semanal ── */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        {vets.length === 0 ? (
+          <EmptyVets
+            onAdd={() => {
+              setNewVetName("");
+              setError("");
+              setModal("newVet");
+            }}
+          />
+        ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="py-3 px-4 text-left text-xs font-semibold text-gray-400 uppercase w-20">
-                    Hora
+                {/* Fila de dias */}
+                <tr className="bg-teal-500">
+                  {/* Columna hora + vet (sticky izq) */}
+                  <th className="py-3 px-3 w-[90px] min-w-[90px]">
+                    <span className="text-[10px] font-semibold text-teal-200 uppercase tracking-wider">
+                      Hora
+                    </span>
                   </th>
                   {weekDays.map((d, i) => {
                     const isToday = d === today;
                     return (
-                      <th key={d} className="py-3 px-2 text-center">
+                      <th key={d} className="py-2 px-1 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          <span className="text-xs text-gray-400">
+                          <span className="text-[10px] font-medium text-teal-200 uppercase">
                             {DAY_LABELS[i]}
                           </span>
                           <span
-                            className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
-                              isToday
-                                ? "bg-teal-600 text-white"
-                                : "text-gray-600"
-                            }`}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors
+                              ${isToday ? "bg-white text-teal-700" : "text-white"}`}
                           >
-                            {/* Ajuste local para renderizar el número correcto del día en la semana */}
                             {getLocalFixedDate(d).getDate()}
                           </span>
                         </div>
@@ -487,57 +424,97 @@ export default function AppointmentCalendar() {
                     );
                   })}
                 </tr>
+
+                {/* Fila de nombres de vet (solo si hay mas de 1 visible) */}
+                {visibleVets.length > 1 && (
+                  <tr className="bg-teal-50 border-b border-teal-100">
+                    <td className="py-2 px-3 text-[10px] text-teal-400 font-semibold uppercase tracking-wider">
+                      Vet
+                    </td>
+                    {weekDays.map((d) => (
+                      <td key={d} className="py-2 px-1">
+                        <div className="flex gap-1 justify-center flex-wrap">
+                          {visibleVets.map((v) => (
+                            <span
+                              key={v.id}
+                              className="text-[9px] font-semibold text-teal-700 bg-teal-100 rounded-full px-1.5 py-0.5 truncate max-w-[60px]"
+                              title={v.name}
+                            >
+                              {v.name.split(" ")[0]}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                )}
               </thead>
+
               <tbody className="divide-y divide-gray-50">
-                {HOURS.map((hour) => (
+                {HOURS.map((hour, hi) => (
                   <tr
                     key={hour}
-                    className="hover:bg-gray-50/50 transition-colors"
+                    className={`transition-colors hover:bg-gray-50/60 ${hi % 2 === 0 ? "" : "bg-gray-50/30"}`}
                   >
-                    <td className="py-3 px-4 text-xs font-mono font-semibold text-gray-400">
+                    {/* Hora */}
+                    <td className="py-2 px-3 text-xs font-mono font-semibold text-gray-400 align-top pt-3 w-[90px] min-w-[90px]">
                       {hour}
                     </td>
+
+                    {/* Celdas por dia */}
                     {weekDays.map((d) => {
-                      const dayAppts = vets
-                        .map((v) => getAppt(hour, v.name, d))
-                        .filter(Boolean);
+                      const cellAppts = visibleVets
+                        .map((v) => ({
+                          appt: getAppt(hour, v.name, d),
+                          vet: v,
+                        }))
+                        .filter((x) => x.appt);
+
                       return (
                         <td
                           key={d}
-                          className="py-1.5 px-1.5 align-top min-w-[100px]"
+                          className="py-1 px-1 align-top min-w-[90px]"
                         >
-                          {dayAppts.length > 0 ? (
-                            dayAppts.map((appt) => (
+                          <div className="flex flex-col gap-1">
+                            {/* Citas existentes */}
+                            {cellAppts.map(({ appt, vet }) => (
                               <button
                                 key={appt.id}
-                                onClick={() => {
-                                  setActiveAppt(appt);
-                                  setApptForm({
-                                    pet_name: appt.pet_name,
-                                    owner_name: appt.owner_name || "",
-                                  });
-                                  setError("");
-                                  setModal("detail");
-                                }}
-                                className="w-full mb-1 rounded-lg py-1.5 px-2 text-left bg-teal-50 border border-teal-200 hover:bg-teal-100 transition"
+                                onClick={() => openSlotModal(hour, vet.name, d)}
+                                className="w-full text-left rounded-lg px-2 py-1.5 bg-teal-50 border border-teal-200 hover:bg-teal-100 hover:border-teal-400 transition group"
                               >
-                                <p className="text-xs font-semibold text-teal-800 truncate flex items-center gap-1">
+                                <p className="text-[11px] font-semibold text-teal-800 flex items-center gap-1 truncate">
                                   <PawPrint
                                     size={10}
-                                    className="text-teal-600"
-                                  />{" "}
+                                    className="text-teal-500 shrink-0"
+                                  />
                                   {appt.pet_name}
                                 </p>
-                                <p className="text-[10px] text-teal-500 truncate ml-3 mt-0.5">
-                                  {appt.vet_name}
+                                <p className="text-[10px] text-teal-500 truncate ml-[14px]">
+                                  {appt.owner_name || appt.vet_name}
                                 </p>
                               </button>
-                            ))
-                          ) : (
-                            <div className="w-full rounded-lg py-2 text-center text-gray-200 text-xs border border-dashed border-gray-100">
-                              —
-                            </div>
-                          )}
+                            ))}
+
+                            {/* Slot vacio: mostrar boton solo si hay un vet seleccionado */}
+                            {cellAppts.length === 0 && selectedVet && (
+                              <button
+                                onClick={() =>
+                                  openSlotModal(hour, selectedVet.name, d)
+                                }
+                                className="w-full rounded-lg py-2 text-center text-[11px] text-gray-300 border border-dashed border-gray-200 hover:border-teal-300 hover:text-teal-400 hover:bg-teal-50/40 transition"
+                              >
+                                <Plus size={12} className="inline -mt-0.5" />
+                              </button>
+                            )}
+
+                            {/* Vista todos: mostrar + solo si hay algun slot libre visible */}
+                            {cellAppts.length === 0 && !selectedVet && (
+                              <div className="w-full rounded-lg py-2 text-center text-gray-200 text-[11px] border border-dashed border-gray-100">
+                                —
+                              </div>
+                            )}
+                          </div>
                         </td>
                       );
                     })}
@@ -546,222 +523,231 @@ export default function AppointmentCalendar() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* ── Modales ── */}
+      {/* ── MODALES ══════════════════════════════════════════════════════════════ */}
       {modal && (
         <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={(e) => e.target === e.currentTarget && closeModal()}
         >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            {/* Nueva cita */}
-            {modal === "newAppt" && (
-              <>
-                <h2 className="text-base font-bold text-gray-800 mb-1">
-                  Nueva cita
-                </h2>
-                <p className="text-xs text-gray-400 mb-5">
-                  {activeSlot.time} · {activeSlot.vetName} ·{" "}
-                  {fmtDate(activeSlot.date)}
-                </p>
-                <Field
-                  label="Dueño"
-                  value={apptForm.owner_name}
-                  onChange={(v) =>
-                    setApptForm((f) => ({ ...f, owner_name: v }))
-                  }
-                  placeholder="Ej: Juan Pérez"
-                />
-                <Field
-                  label="Mascota"
-                  value={apptForm.pet_name}
-                  onChange={(v) => setApptForm((f) => ({ ...f, pet_name: v }))}
-                  placeholder="Ej: Firulais"
-                  onEnter={createAppt}
-                />
-                {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
-                <div className="flex gap-2 mt-2">
-                  <Btn
-                    onClick={createAppt}
-                    loading={loading}
-                    disabled={!apptForm.pet_name || !apptForm.owner_name}
-                  >
-                    Confirmar
-                  </Btn>
-                  <Ghost onClick={closeModal}>Cancelar</Ghost>
-                </div>
-              </>
-            )}
-
-            {/* Detalle de la cita */}
-            {modal === "detail" && activeAppt && (
-              <>
-                <h2 className="text-base font-bold text-gray-800 mb-4">
-                  Detalle de cita
-                </h2>
-                <div className="bg-gray-50 rounded-xl p-4 space-y-2 mb-5">
-                  <Row
-                    icon={<Clock size={16} />}
-                    label="Hora"
-                    value={fmtTime(activeAppt.appointment_time)}
-                  />
-                  <Row
-                    icon={<Calendar size={16} />}
-                    label="Fecha"
-                    value={fmtDate(activeAppt.appointment_date)}
-                  />
-                  <Row
-                    icon={<Stethoscope size={16} />}
-                    label="Veterinario"
-                    value={activeAppt.vet_name}
-                  />
-                  <Row
-                    icon={<PawPrint size={16} />}
-                    label="Mascota"
-                    value={activeAppt.pet_name}
-                  />
-                  <Row
-                    icon={<User size={16} />}
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-sm flex flex-col border border-slate-100"
+            style={{ maxHeight: "calc(100dvh - 2rem)" }}
+          >
+            <div className="overflow-y-auto flex-1 p-8">
+              {/* Nueva cita ─────────────────────────────────── */}
+              {modal === "newAppt" && (
+                <>
+                  <ModalHeader title="Nueva cita" onClose={closeModal} />
+                  <p className="text-xs text-gray-400 mb-5 flex items-center gap-1.5 font-medium">
+                    <Clock size={12} className="text-teal-500" />{" "}
+                    {activeSlot.time}
+                    <span className="text-gray-200">·</span>
+                    <Stethoscope size={12} className="text-teal-500" />{" "}
+                    {activeSlot.vetName}
+                    <span className="text-gray-200">·</span>
+                    <Calendar size={12} className="text-teal-500" />{" "}
+                    {fmtShort(activeSlot.date)}
+                  </p>
+                  <Field
                     label="Dueño"
-                    value={activeAppt.owner_name || "—"}
+                    value={apptForm.owner_name}
+                    onChange={(v) =>
+                      setApptForm((f) => ({ ...f, owner_name: v }))
+                    }
+                    placeholder="Ej: Juan Perez"
                   />
-                </div>
-                {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
-                <div className="flex flex-col gap-2">
-                  <Btn
-                    onClick={() => {
-                      setError("");
-                      setModal("editAppt");
-                    }}
-                  >
-                    <span className="flex justify-center items-center gap-2">
-                      <Pencil size={16} /> Editar
-                    </span>
-                  </Btn>
-                  <div className="flex gap-2">
-                    <Danger
+                  <Field
+                    label="Mascota"
+                    value={apptForm.pet_name}
+                    onChange={(v) =>
+                      setApptForm((f) => ({ ...f, pet_name: v }))
+                    }
+                    placeholder="Ej: Firulais"
+                    onEnter={createAppt}
+                  />
+                  <ErrorMsg msg={error} />
+                  <div className="flex gap-3 mt-5">
+                    <Btn
+                      onClick={createAppt}
+                      loading={loading}
+                      disabled={!apptForm.pet_name || !apptForm.owner_name}
+                    >
+                      Confirmar cita
+                    </Btn>
+                    <Ghost onClick={closeModal}>Cancelar</Ghost>
+                  </div>
+                </>
+              )}
+
+              {/* Detalle ─────────────────────────────────────── */}
+              {modal === "detail" && activeAppt && (
+                <>
+                  <ModalHeader title="Detalle de cita" onClose={closeModal} />
+                  <div className="bg-slate-50 rounded-2xl p-4 space-y-2.5 mb-5 border border-slate-100">
+                    <InfoRow
+                      icon={<Clock size={14} />}
+                      label="Hora"
+                      value={fmtTime(activeAppt.appointment_time)}
+                    />
+                    <InfoRow
+                      icon={<Calendar size={14} />}
+                      label="Fecha"
+                      value={fmtShort(activeAppt.appointment_date)}
+                    />
+                    <InfoRow
+                      icon={<Stethoscope size={14} />}
+                      label="Veterinario"
+                      value={activeAppt.vet_name}
+                    />
+                    <InfoRow
+                      icon={<PawPrint size={14} />}
+                      label="Mascota"
+                      value={activeAppt.pet_name}
+                    />
+                    <InfoRow
+                      icon={<User size={14} />}
+                      label="Dueño"
+                      value={activeAppt.owner_name || "—"}
+                    />
+                  </div>
+                  <ErrorMsg msg={error} />
+                  <div className="flex flex-col gap-2">
+                    <Btn
                       onClick={() => {
                         setError("");
-                        setModal("confirmDeleteAppt");
+                        setModal("editAppt");
                       }}
                     >
-                      <span className="flex justify-center items-center gap-2">
-                        <Trash2 size={16} /> Eliminar
+                      <span className="flex items-center justify-center gap-2">
+                        <Pencil size={14} /> Editar cita
                       </span>
-                    </Danger>
-                    <Ghost onClick={closeModal}>Cerrar</Ghost>
+                    </Btn>
+                    <div className="flex gap-3">
+                      <Danger
+                        onClick={() => {
+                          setError("");
+                          setModal("confirmDeleteAppt");
+                        }}
+                      >
+                        <span className="flex items-center justify-center gap-2">
+                          <Trash2 size={14} /> Eliminar
+                        </span>
+                      </Danger>
+                      <Ghost onClick={closeModal}>Cerrar</Ghost>
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              )}
 
-            {/* Editar */}
-            {modal === "editAppt" && activeAppt && (
-              <>
-                <h2 className="text-base font-bold text-gray-800 mb-1">
-                  Editar cita
-                </h2>
-                <p className="text-xs text-gray-400 mb-5">
-                  {fmtTime(activeAppt.appointment_time)} · {activeAppt.vet_name}
-                </p>
-                <Field
-                  label="Dueño"
-                  value={apptForm.owner_name}
-                  onChange={(v) =>
-                    setApptForm((f) => ({ ...f, owner_name: v }))
-                  }
-                  placeholder="Ej: Juan Pérez"
-                />
-                <Field
-                  label="Mascota"
-                  value={apptForm.pet_name}
-                  onChange={(v) => setApptForm((f) => ({ ...f, pet_name: v }))}
-                  placeholder="Ej: Firulais"
-                  onEnter={updateAppt}
-                />
-                {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
-                <div className="flex gap-2 mt-2">
-                  <Btn
-                    onClick={updateAppt}
-                    loading={loading}
-                    disabled={!apptForm.pet_name || !apptForm.owner_name}
-                  >
-                    Guardar
-                  </Btn>
-                  <Ghost onClick={() => setModal("detail")}>Volver</Ghost>
-                </div>
-              </>
-            )}
+              {/* Editar ──────────────────────────────────────── */}
+              {modal === "editAppt" && activeAppt && (
+                <>
+                  <ModalHeader title="Editar cita" onClose={closeModal} />
+                  <p className="text-xs text-gray-400 mb-5 font-medium">
+                    {fmtTime(activeAppt.appointment_time)} ·{" "}
+                    {activeAppt.vet_name}
+                  </p>
+                  <Field
+                    label="Dueño"
+                    value={apptForm.owner_name}
+                    onChange={(v) =>
+                      setApptForm((f) => ({ ...f, owner_name: v }))
+                    }
+                    placeholder="Ej: Juan Perez"
+                  />
+                  <Field
+                    label="Mascota"
+                    value={apptForm.pet_name}
+                    onChange={(v) =>
+                      setApptForm((f) => ({ ...f, pet_name: v }))
+                    }
+                    placeholder="Ej: Firulais"
+                    onEnter={updateAppt}
+                  />
+                  <ErrorMsg msg={error} />
+                  <div className="flex gap-3 mt-5">
+                    <Btn
+                      onClick={updateAppt}
+                      loading={loading}
+                      disabled={!apptForm.pet_name || !apptForm.owner_name}
+                    >
+                      Guardar cambios
+                    </Btn>
+                    <Ghost onClick={() => setModal("detail")}>Volver</Ghost>
+                  </div>
+                </>
+              )}
 
-            {/* Confirmar eliminar cita */}
-            {modal === "confirmDeleteAppt" && activeAppt && (
-              <>
-                <h2 className="text-base font-bold text-gray-800 mb-2">
-                  ¿Eliminar cita?
-                </h2>
-                <p className="text-sm text-gray-500 mb-5">
-                  Cita de <strong>{activeAppt.pet_name}</strong> (
-                  {activeAppt.owner_name}) a las{" "}
-                  {fmtTime(activeAppt.appointment_time)}. No se puede deshacer.
-                </p>
-                {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
-                <div className="flex gap-2">
-                  <Danger onClick={deleteAppt} loading={loading}>
-                    Sí, eliminar
-                  </Danger>
-                  <Ghost onClick={() => setModal("detail")}>Cancelar</Ghost>
-                </div>
-              </>
-            )}
+              {/* Confirmar eliminar cita ─────────────────────── */}
+              {modal === "confirmDeleteAppt" && activeAppt && (
+                <>
+                  <ModalHeader title="Eliminar cita" onClose={closeModal} />
+                  <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 mb-5 text-sm text-rose-700 font-medium leading-relaxed">
+                    Se eliminará la cita de{" "}
+                    <strong>{activeAppt.pet_name}</strong> (
+                    {activeAppt.owner_name}) a las{" "}
+                    {fmtTime(activeAppt.appointment_time)}. Esta acción no se
+                    puede deshacer.
+                  </div>
+                  <ErrorMsg msg={error} />
+                  <div className="flex gap-3">
+                    <Danger onClick={deleteAppt} loading={loading}>
+                      Confirmar eliminación
+                    </Danger>
+                    <Ghost onClick={() => setModal("detail")}>Cancelar</Ghost>
+                  </div>
+                </>
+              )}
 
-            {/* Nuevo veterinario */}
-            {modal === "newVet" && (
-              <>
-                <h2 className="text-base font-bold text-gray-800 mb-4">
-                  Nuevo veterinario
-                </h2>
-                <Field
-                  label="Nombre"
-                  value={newVetName}
-                  onChange={setNewVetName}
-                  placeholder="Ej: Dr. Rodríguez"
-                  onEnter={createVet}
-                />
-                {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
-                <div className="flex gap-2 mt-2">
-                  <Btn
-                    onClick={createVet}
-                    loading={loading}
-                    disabled={!newVetName.trim()}
-                  >
-                    Añadir
-                  </Btn>
-                  <Ghost onClick={closeModal}>Cancelar</Ghost>
-                </div>
-              </>
-            )}
+              {/* Nuevo veterinario ───────────────────────────── */}
+              {modal === "newVet" && (
+                <>
+                  <ModalHeader title="Nuevo veterinario" onClose={closeModal} />
+                  <Field
+                    label="Nombre completo"
+                    value={newVetName}
+                    onChange={setNewVetName}
+                    placeholder="Ej: Dr. Rodriguez"
+                    onEnter={createVet}
+                  />
+                  <ErrorMsg msg={error} />
+                  <div className="flex gap-3 mt-5">
+                    <Btn
+                      onClick={createVet}
+                      loading={loading}
+                      disabled={!newVetName.trim()}
+                    >
+                      Agregar
+                    </Btn>
+                    <Ghost onClick={closeModal}>Cancelar</Ghost>
+                  </div>
+                </>
+              )}
 
-            {/* Confirmar eliminar vet */}
-            {modal === "confirmDeleteVet" && activeVet && (
-              <>
-                <h2 className="text-base font-bold text-gray-800 mb-2">
-                  ¿Eliminar veterinario?
-                </h2>
-                <p className="text-sm text-gray-500 mb-5">
-                  Se eliminará a <strong>{activeVet.name}</strong>. Primero
-                  elimina sus citas activas si las tiene.
-                </p>
-                {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
-                <div className="flex gap-2">
-                  <Danger onClick={deleteVet} loading={loading}>
-                    Sí, eliminar
-                  </Danger>
-                  <Ghost onClick={closeModal}>Cancelar</Ghost>
-                </div>
-              </>
-            )}
+              {/* Confirmar eliminar vet ──────────────────────── */}
+              {modal === "confirmDeleteVet" && activeVet && (
+                <>
+                  <ModalHeader
+                    title="Eliminar veterinario"
+                    onClose={closeModal}
+                  />
+                  <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 mb-5 text-sm text-rose-700 font-medium leading-relaxed">
+                    Se eliminará a <strong>{activeVet.name}</strong>. Primero
+                    elimina sus citas activas si las tiene.
+                  </div>
+                  <ErrorMsg msg={error} />
+                  <div className="flex gap-3">
+                    <Danger onClick={deleteVet} loading={loading}>
+                      Confirmar
+                    </Danger>
+                    <Ghost onClick={closeModal}>Cancelar</Ghost>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -769,11 +755,135 @@ export default function AppointmentCalendar() {
   );
 }
 
-// ── Subcomponentes ──────────────────────────────────────────────
+// ── Empty state ───────────────────────────────────────────────────────────────
+function EmptyVets({ onAdd }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3">
+      <div className="w-14 h-14 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center">
+        <Stethoscope size={26} className="text-teal-400" />
+      </div>
+      <p className="text-sm font-bold text-slate-800">
+        Sin veterinarios registrados
+      </p>
+      <p className="text-xs text-slate-400 max-w-[200px] font-medium leading-relaxed">
+        Agrega al menos un veterinario para comenzar a gestionar citas.
+      </p>
+      <button
+        onClick={onAdd}
+        className="mt-1 flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl px-4 py-2 text-sm font-bold transition shadow-sm"
+      >
+        <Plus size={14} /> Agregar veterinario
+      </button>
+    </div>
+  );
+}
+
+// ── VetPill ───────────────────────────────────────────────────────────────────
+function VetPill({ label, count, active, onClick, onDelete }) {
+  return (
+    <div
+      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold cursor-pointer select-none transition-all shrink-0 border
+        ${
+          active
+            ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+            : "bg-white text-slate-500 border-slate-200 hover:border-teal-300 hover:text-teal-700"
+        }`}
+      onClick={onClick}
+    >
+      {onDelete && (
+        <span
+          className={`w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-black
+            ${active ? "bg-white/20 text-white" : "bg-teal-100 text-teal-700"}`}
+        >
+          {label.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <span className="truncate max-w-[100px]">{label}</span>
+      {count !== null && count > 0 && (
+        <span
+          className={`text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none
+            ${active ? "bg-white/25 text-white" : "bg-teal-100 text-teal-600"}`}
+        >
+          {count}
+        </span>
+      )}
+      {onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition ml-0.5
+            ${active ? "hover:bg-white/20 text-white/70 hover:text-white" : "text-slate-300 hover:text-rose-500 hover:bg-rose-50"}`}
+          title={`Eliminar ${label}`}
+        >
+          <X size={9} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── NavBtn (Modificado para ser responsive con Estilo Íconos Dashboard) ──
+function NavBtn({ children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="p-2 rounded-xl text-slate-400 hover:text-teal-600 hover:bg-slate-50 transition-all duration-200 flex items-center justify-center"
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── ModalHeader ───────────────────────────────────────────────────────────────
+function ModalHeader({ title, onClose }) {
+  return (
+    <div className="flex items-center justify-between mb-5">
+      <h2 className="text-xl font-bold text-slate-800 tracking-tight">
+        {title}
+      </h2>
+      <button
+        onClick={onClose}
+        className="w-8 h-8 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-400 flex items-center justify-center transition-all"
+      >
+        <X size={15} />
+      </button>
+    </div>
+  );
+}
+
+// ── InfoRow ───────────────────────────────────────────────────────────────────
+function InfoRow({ icon, label, value }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="text-teal-500 shrink-0">{icon}</span>
+      <span className="text-xs text-slate-400 w-20 shrink-0 font-bold uppercase tracking-wider">
+        {label}
+      </span>
+      <span className="text-xs font-semibold text-slate-700 truncate">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// ── ErrorMsg ──────────────────────────────────────────────────────────────────
+function ErrorMsg({ msg }) {
+  if (!msg) return null;
+  return (
+    <div className="flex items-start gap-2 mt-3 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2.5">
+      <AlertCircle size={14} className="text-rose-500 mt-0.5 shrink-0" />
+      <p className="text-xs text-rose-600 font-medium">{msg}</p>
+    </div>
+  );
+}
+
+// ── Field ─────────────────────────────────────────────────────────────────────
 function Field({ label, value, onChange, placeholder, onEnter }) {
   return (
     <div className="mb-4">
-      <label className="block text-xs font-semibold text-gray-500 mb-1">
+      <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">
         {label}
       </label>
       <input
@@ -782,28 +892,19 @@ function Field({ label, value, onChange, placeholder, onEnter }) {
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && onEnter?.()}
         placeholder={placeholder}
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all shadow-sm"
       />
     </div>
   );
 }
 
-function Row({ icon, label, value }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-5 flex justify-center text-teal-600">{icon}</span>
-      <span className="text-xs text-gray-400 w-24">{label}</span>
-      <span className="text-xs font-medium text-gray-700">{value}</span>
-    </div>
-  );
-}
-
+// ── Botones de Modales (Sincronizados con ABtn / AGhost / Danger del Dashboard) ──
 function Btn({ children, onClick, loading, disabled }) {
   return (
     <button
       onClick={onClick}
       disabled={loading || disabled}
-      className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg py-2 text-sm font-medium transition disabled:opacity-50"
+      className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-md shadow-teal-600/20 disabled:opacity-50 hover:scale-[1.02] text-center"
     >
       {loading ? "Cargando..." : children}
     </button>
@@ -815,7 +916,7 @@ function Danger({ children, onClick, loading }) {
     <button
       onClick={onClick}
       disabled={loading}
-      className="flex-1 bg-red-500 hover:bg-red-600 text-white rounded-lg py-2 text-sm font-medium transition disabled:opacity-50"
+      className="flex-1 bg-rose-500 hover:bg-rose-600 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-md shadow-rose-600/20 disabled:opacity-50 text-center"
     >
       {loading ? "Cargando..." : children}
     </button>
@@ -826,7 +927,7 @@ function Ghost({ children, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex-1 border border-gray-200 hover:bg-gray-50 text-gray-500 rounded-lg py-2 text-sm font-medium transition"
+      className="flex-1 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-xl py-3 text-sm font-bold transition-all shadow-sm text-center"
     >
       {children}
     </button>
